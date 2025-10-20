@@ -261,15 +261,33 @@ class VishwaAgent:
 
         # Check if needs approval
         if self._needs_approval(tool_call):
-            if not self._get_user_approval(tool_call):
+            approval_result = self._get_user_approval(tool_call)
+            if not approval_result:
+                # Ask user for feedback on why they rejected it
+                feedback = self._get_rejection_feedback(tool_call)
                 return ToolResult(
                     success=False,
                     error="Action rejected by user",
+                    suggestion=feedback if feedback else "User rejected without feedback",
+                )
+
+        # Check if trying to create a file that was already created this session
+        if tool_name == "write_file":
+            file_path = arguments.get("path", "")
+            if self.context.was_file_created(file_path):
+                return ToolResult(
+                    success=False,
+                    error=f"File '{file_path}' was already created in this session",
+                    suggestion="The file already exists. Use str_replace to modify it, or use a different filename.",
                 )
 
         # Execute tool
         try:
             result = tool.execute(**arguments)
+
+            # Track file creation
+            if tool_name == "write_file" and result.success:
+                self.context.mark_file_created(arguments.get("path", ""))
 
             # Track modifications
             if tool_name == "str_replace" and result.success:
@@ -320,9 +338,38 @@ class VishwaAgent:
 
         return False
 
+    def _get_rejection_feedback(self, tool_call: ToolCall) -> str:
+        """
+        Ask user for feedback when they reject a tool call.
+
+        This helps the agent understand what needs to be changed instead of
+        blindly retrying the same approach.
+
+        Args:
+            tool_call: The tool call that was rejected
+
+        Returns:
+            User's feedback as a string
+        """
+        from rich.console import Console
+        from prompt_toolkit import prompt as pt_prompt
+
+        console = Console()
+
+        console.print("\n[yellow]💬 Help me understand:[/yellow]")
+        console.print("[dim]What would you like me to change about this approach?[/dim]")
+        console.print("[dim](Press Enter to skip, or Ctrl+C to cancel the task)[/dim]\n")
+
+        try:
+            feedback = pt_prompt("Your feedback: ", multiline=False)
+            return feedback.strip() if feedback.strip() else None
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Task cancelled by user[/yellow]")
+            raise KeyboardInterrupt()
+
     def _get_user_approval(self, tool_call: ToolCall) -> bool:
         """
-        Get user approval for tool call.
+        Get user approval for tool call with interactive buttons.
 
         Shows preview for file operations.
 
@@ -332,7 +379,7 @@ class VishwaAgent:
         Returns:
             True if approved
         """
-        print(f"\n⚠️  Approval needed for: {tool_call.name}")
+        from vishwa.cli.ui import confirm_action, show_diff
 
         # Show preview for write_file
         if tool_call.name == "write_file":
@@ -355,6 +402,8 @@ class VishwaAgent:
             print("=" * 60)
             print(f"Total: {len(lines)} lines, {len(content)} characters\n")
 
+            return confirm_action(f"Create file '{path}'?", default=False)
+
         # Show preview for str_replace
         elif tool_call.name == "str_replace":
             path = tool_call.arguments.get("path", "")
@@ -362,19 +411,22 @@ class VishwaAgent:
             new_str = tool_call.arguments.get("new_str", "")
 
             print(f"\n📝 Modifying file: {path}")
-            print("=" * 60)
-            print("OLD:")
-            print(old_str[:200] + ("..." if len(old_str) > 200 else ""))
-            print("\nNEW:")
-            print(new_str[:200] + ("..." if len(new_str) > 200 else ""))
-            print("=" * 60 + "\n")
+
+            # Use the fancy diff display
+            show_diff(path, old_str, new_str)
+
+            return confirm_action(f"Apply changes to '{path}'?", default=False)
 
         else:
-            # For other operations, just show arguments
-            print(f"   Arguments: {tool_call.arguments}\n")
+            # For other operations, use interactive confirmation
+            args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.arguments.items())
+            if len(args_preview) > 100:
+                args_preview = args_preview[:100] + "..."
 
-        response = input("   Approve? [y/N]: ").strip().lower()
-        return response in ["y", "yes"]
+            return confirm_action(
+                f"Execute {tool_call.name}({args_preview})?",
+                default=False
+            )
 
     def _should_stop(self) -> bool:
         """

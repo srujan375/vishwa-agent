@@ -74,6 +74,7 @@ class ContextManager:
         self.files_in_context: Dict[str, str] = {}
         self.modifications: List[Modification] = []
         self.recent_tool_outputs: deque = deque(maxlen=10)
+        self.created_files: set = set()  # Track files created in this session
 
     def add_message(
         self,
@@ -115,7 +116,7 @@ class ContextManager:
         # Add assistant message with tool call
         self.add_message(
             role="assistant",
-            content=None,
+            content="",  # Fixed: Changed from None to empty string for API compatibility
             tool_calls=[
                 {
                     "id": tool_call.id,
@@ -196,6 +197,27 @@ class ContextManager:
         )
         self.modifications.append(modification)
 
+    def mark_file_created(self, file_path: str) -> None:
+        """
+        Mark a file as created in this session.
+
+        Args:
+            file_path: Path to the created file
+        """
+        self.created_files.add(file_path)
+
+    def was_file_created(self, file_path: str) -> bool:
+        """
+        Check if a file was already created in this session.
+
+        Args:
+            file_path: Path to check
+
+        Returns:
+            True if file was created in this session
+        """
+        return file_path in self.created_files
+
     def estimate_tokens(self) -> int:
         """
         Estimate current token usage.
@@ -220,12 +242,13 @@ class ContextManager:
         # Rough conversion: 4 chars = 1 token
         return total_chars // 4
 
-    def is_approaching_limit(self, threshold: float = 0.8) -> bool:
+    def is_approaching_limit(self, threshold: float = 0.6) -> bool:
         """
         Check if approaching token limit.
 
         Args:
             threshold: Percentage of max (0.0 to 1.0)
+                      Default 0.6 (60%) to leave headroom for responses
 
         Returns:
             True if above threshold
@@ -240,28 +263,40 @@ class ContextManager:
 
         Strategy:
         1. Remove old file contents (keep modified ones)
-        2. Remove old tool outputs
-        3. Keep recent messages
+        2. Remove older messages, keeping only recent context
+        3. Keep first user message (the task) and last 15 messages
         """
         if not self.is_approaching_limit():
             return
 
-        # Remove non-modified files
+        # Step 1: Remove non-modified files
         modified_files = {mod.file_path for mod in self.modifications}
         for path in list(self.files_in_context.keys()):
             if path not in modified_files:
                 del self.files_in_context[path]
 
-        # If still too large, remove older messages (keep last 20)
-        if self.is_approaching_limit() and len(self.messages) > 20:
-            # Keep first message (usually system prompt) and recent messages
-            system_msg = self.messages[0] if self.messages else None
-            recent_messages = self.messages[-19:]
+        # Step 2: If still too large, aggressively prune messages
+        if self.is_approaching_limit() and len(self.messages) > 15:
+            # Keep first user message (the task) and last 14 messages
+            first_user_msg = None
+            for msg in self.messages:
+                if msg.role == "user":
+                    first_user_msg = msg
+                    break
+
+            recent_messages = self.messages[-14:]
 
             self.messages = []
-            if system_msg and system_msg.role == "system":
-                self.messages.append(system_msg)
+            if first_user_msg and first_user_msg not in recent_messages:
+                self.messages.append(first_user_msg)
             self.messages.extend(recent_messages)
+
+        # Step 3: If STILL too large, truncate tool results in remaining messages
+        if self.is_approaching_limit():
+            for msg in self.messages:
+                if msg.role == "tool" and msg.content and len(msg.content) > 1000:
+                    # Truncate long tool outputs to 1000 chars
+                    msg.content = msg.content[:1000] + "\n... (output truncated)"
 
     def get_summary(self) -> str:
         """
@@ -299,3 +334,4 @@ class ContextManager:
         self.files_in_context.clear()
         self.modifications.clear()
         self.recent_tool_outputs.clear()
+        self.created_files.clear()

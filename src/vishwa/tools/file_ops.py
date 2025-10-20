@@ -248,13 +248,27 @@ new_str = "def login(user):\\n    verify_token()\\n    return user"
 
             # Check for exact match
             if old_str not in content:
+                # Check if it's a whitespace issue
+                old_str_stripped = old_str.strip()
+                content_normalized = content.replace(" \n", "\n").replace("\t\n", "\n")
+
+                suggestion = "Use read_file to get the exact string (including all whitespace)"
+                if old_str_stripped in content or old_str in content_normalized:
+                    suggestion = (
+                        "Whitespace mismatch detected! The text exists but whitespace differs.\n"
+                        "- The file may have trailing spaces or different indentation\n"
+                        "- Use read_file to see the EXACT content with all spaces\n"
+                        "- Copy the exact string including trailing whitespace"
+                    )
+
                 return ToolResult(
                     success=False,
                     error=f"Exact string not found in file",
-                    suggestion="Use read_file to get the exact string (including all whitespace)",
+                    suggestion=suggestion,
                     metadata={
                         "path": path,
                         "old_str_preview": old_str[:100] + "..." if len(old_str) > 100 else old_str,
+                        "whitespace_issue": old_str_stripped in content,
                     },
                 )
 

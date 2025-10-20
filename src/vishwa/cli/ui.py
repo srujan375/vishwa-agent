@@ -15,6 +15,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm
 from rich.syntax import Syntax
 from rich.table import Table
+from prompt_toolkit import prompt
+from prompt_toolkit.shortcuts import radiolist_dialog, button_dialog
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import HTML
 
 # Global console instance
 console = Console()
@@ -81,7 +85,7 @@ def print_error(message: str) -> None:
 
 def show_diff(filepath: str, old: str, new: str) -> None:
     """
-    Display a colored diff.
+    Display a colored diff with red background for deletions and green for additions.
 
     Args:
         filepath: File path
@@ -89,6 +93,7 @@ def show_diff(filepath: str, old: str, new: str) -> None:
         new: New content
     """
     import difflib
+    from rich.text import Text
 
     # Generate unified diff
     old_lines = old.splitlines(keepends=True)
@@ -102,14 +107,34 @@ def show_diff(filepath: str, old: str, new: str) -> None:
         lineterm="",
     )
 
-    diff_text = "".join(diff)
+    # Build colored output
+    diff_output = Text()
 
-    if diff_text:
-        syntax = Syntax(diff_text, "diff", theme="monokai", line_numbers=False)
+    for line in diff:
+        line = line.rstrip('\n')
+
+        if line.startswith('---') or line.startswith('+++'):
+            # File headers - bold white
+            diff_output.append(line + '\n', style="bold white")
+        elif line.startswith('@@'):
+            # Hunk headers - cyan
+            diff_output.append(line + '\n', style="bold cyan")
+        elif line.startswith('-'):
+            # Deletions - red background with white text
+            diff_output.append(line + '\n', style="white on red")
+        elif line.startswith('+'):
+            # Additions - green background with white text
+            diff_output.append(line + '\n', style="white on green")
+        else:
+            # Context lines - dim white
+            diff_output.append(line + '\n', style="dim white")
+
+    if diff_output:
         panel = Panel(
-            syntax,
+            diff_output,
             title=f"📝 Diff: {filepath}",
             border_style="yellow",
+            expand=False,
         )
         console.print(panel)
     else:
@@ -118,7 +143,9 @@ def show_diff(filepath: str, old: str, new: str) -> None:
 
 def confirm_action(message: str, default: bool = False) -> bool:
     """
-    Ask user to confirm an action.
+    Ask user to confirm an action with inline selection.
+
+    Simple inline prompt that doesn't take over the screen.
 
     Args:
         message: Confirmation message
@@ -127,7 +154,85 @@ def confirm_action(message: str, default: bool = False) -> bool:
     Returns:
         True if confirmed
     """
-    return Confirm.ask(f"⚠️  {message}", default=default)
+    from rich.prompt import Prompt
+
+    try:
+        # Show the message with rich formatting
+        console.print(f"\n[bold yellow]⚠️  {message}[/bold yellow]")
+
+        # Create inline prompt with styled options
+        console.print("[dim]Options:[/dim]")
+        console.print("  [green bold]y[/green bold] → Yes, approve and proceed")
+        console.print("  [red bold]n[/red bold] → No, reject this change")
+        console.print()
+
+        # Get user input with validation
+        default_str = "y" if default else "n"
+        choices = ["y", "yes", "n", "no"]
+
+        while True:
+            response = Prompt.ask(
+                "Your choice",
+                choices=["y", "n"],
+                default=default_str,
+                show_choices=False,
+                show_default=True
+            ).lower()
+
+            if response in ["y", "yes"]:
+                console.print("[green]✓ Approved[/green]\n")
+                return True
+            elif response in ["n", "no"]:
+                console.print("[red]✗ Rejected[/red]\n")
+                return False
+            else:
+                console.print(f"[yellow]Please enter 'y' or 'n'[/yellow]")
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Action cancelled[/yellow]")
+        return False
+
+
+def confirm_file_change(filepath: str, action: str = "apply changes") -> str:
+    """
+    Ask user to confirm file changes with multiple options.
+
+    Uses arrow keys to navigate and Enter to select.
+
+    Args:
+        filepath: Path to the file being modified
+        action: Description of the action (e.g., "apply changes", "create file")
+
+    Returns:
+        One of: 'approve', 'reject', 'edit', 'cancel'
+    """
+    try:
+        style = Style.from_dict({
+            'dialog': 'bg:#1e1e1e',
+            'dialog.body': 'bg:#1e1e1e #ffffff',
+            'dialog shadow': 'bg:#000000',
+            'button': 'bg:#4a4a4a #ffffff',
+            'button.focused': 'bg:#0078d4 #ffffff bold',
+            'button.arrow': '#ffffff',
+        })
+
+        result = button_dialog(
+            title=f'📝 {action.title()}',
+            text=f"File: {filepath}\n\nWhat would you like to do?",
+            buttons=[
+                ('✓ Approve', 'approve'),
+                ('✗ Reject', 'reject'),
+                ('✎ Edit First', 'edit'),
+                ('⊗ Cancel', 'cancel'),
+            ],
+            style=style,
+        ).run()
+
+        return result if result else 'cancel'
+
+    except (KeyboardInterrupt, EOFError):
+        console.print("\n[yellow]Action cancelled[/yellow]")
+        return 'cancel'
 
 
 def show_result_table(result: any) -> None:

@@ -122,10 +122,12 @@ class AnthropicProvider(BaseLLM):
         """
         Convert messages from OpenAI format to Claude format.
 
-        Main difference: tool results
-        - OpenAI: role="tool", content="...", tool_call_id="..."
-        - Claude: role="user", content=[{"type": "tool_result", "tool_use_id": "...", "content": "..."}]
+        Main differences:
+        - Tool results: OpenAI uses role="tool", Claude uses role="user" with tool_result blocks
+        - Tool calls: OpenAI uses tool_calls array, Claude uses content blocks with tool_use type
         """
+        import json
+
         claude_messages = []
 
         for msg in messages:
@@ -140,16 +142,53 @@ class AnthropicProvider(BaseLLM):
                         {
                             "type": "tool_result",
                             "tool_use_id": msg.get("tool_call_id", ""),
-                            "content": content,
+                            "content": content if content else "",
                         }
                     ],
+                })
+            elif role == "assistant" and "tool_calls" in msg:
+                # Convert assistant message with tool calls from OpenAI to Claude format
+                content_blocks = []
+
+                # Add text content if present
+                if content and content.strip():
+                    content_blocks.append({
+                        "type": "text",
+                        "text": content
+                    })
+
+                # Convert tool calls to Claude tool_use blocks
+                for tool_call in msg.get("tool_calls", []):
+                    func = tool_call.get("function", {})
+                    arguments = func.get("arguments", "{}")
+
+                    # Parse arguments if they're a string
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+
+                    content_blocks.append({
+                        "type": "tool_use",
+                        "id": tool_call.get("id", ""),
+                        "name": func.get("name", ""),
+                        "input": arguments
+                    })
+
+                claude_messages.append({
+                    "role": "assistant",
+                    "content": content_blocks
                 })
             elif role == "assistant" and isinstance(content, list):
                 # Assistant message with tool calls (already in Claude format from previous response)
                 claude_messages.append(msg)
             else:
-                # Regular message
-                claude_messages.append({"role": role, "content": content})
+                # Regular message - ensure content is not None
+                claude_messages.append({
+                    "role": role,
+                    "content": content if content else ""
+                })
 
         return claude_messages
 
