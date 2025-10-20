@@ -1,0 +1,35 @@
+# Vishwa - Terminal-based Agentic Coding Assistant
+# Core Dependencies
+
+# LLM APIs
+anthropic
+openai
+
+# CLI & Terminal UI
+click
+rich
+prompt-toolkit
+
+# File Operations
+gitpython
+unidiff
+
+# Data & Config
+pydantic
+pydantic-settings
+python-dotenv
+
+# HTTP requests (for Ollama health checks)
+requests
+
+# Testing
+pytest
+pytest-mock
+pytest-cov
+
+# Linting & Formatting
+ruff
+
+# Type Checking
+mypy
+types-requests

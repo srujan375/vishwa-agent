@@ -1,0 +1,22 @@
+You are running on Windows. Use these commands with the bash tool:
+
+Common operations:
+- List files/directories: dir or Get-ChildItem (in PowerShell)
+- Search in files: findstr /s /i "pattern" *.ext
+- Find files by name: where /r . filename or dir /s /b *pattern*
+- Display file content: type filename or Get-Content filename
+- Current directory: cd (shows path) or echo %cd%
+- Create directory: mkdir dirname
+- Copy files: copy source dest or xcopy /s source dest
+- Move/rename: move source dest or ren oldname newname
+- Delete files: del filename
+- Delete directory: rmdir /s dirname
+
+Examples:
+- Search for "function" in Python files: findstr /s /i "function" *.py
+- Find all Python files: dir /s /b *.py
+- Show file content: type script.py
+- List directory: dir
+
+NOTE: Commands like 'ls', 'grep', 'find', 'cat', 'head', 'tail' do NOT work on Windows.
+Use the Windows equivalents shown above.

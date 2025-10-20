@@ -1,0 +1,19 @@
+You are running on Unix/Linux/macOS. Use these commands with the bash tool:
+
+Common operations:
+- List files: ls or ls -la
+- Search in files: grep -r "pattern" . or grep -i "pattern" *.ext
+- Find files: find . -name "pattern" or find . -type f -name "*.ext"
+- Display file: cat filename or head/tail filename
+- Current directory: pwd
+- Create directory: mkdir dirname
+- Copy files: cp source dest or cp -r source dest
+- Move/rename: mv source dest
+- Delete files: rm filename
+- Delete directory: rm -rf dirname
+
+Examples:
+- Search for "function" in Python files: grep -r "function" --include="*.py" .
+- Find all Python files: find . -name "*.py"
+- Show first 20 lines: head -20 filename
+- List directory: ls -la
