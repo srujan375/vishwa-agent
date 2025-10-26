@@ -9,6 +9,7 @@ Provides a professional terminal interface with:
 """
 
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import completion_is_selected
 from prompt_toolkit.styles import Style
 from rich.console import Console
 from rich.panel import Panel
@@ -25,6 +27,9 @@ from rich.spinner import Spinner
 from rich.table import Table
 
 from vishwa.agent.core import VishwaAgent
+from vishwa.cli.file_completer import FileCompleter
+from vishwa.cli.command_completer import CommandCompleter
+from vishwa.cli.merged_completer import MergedCompleter
 from vishwa.config import Config
 
 
@@ -38,6 +43,13 @@ STYLE = Style.from_dict({
     'info': '#5f87ff',             # Blue info
     'secondary': 'ansibrightblack',  # Dim gray metadata
     'separator': 'ansibrightblack',  # Dim gray separators
+
+    # Completion menu styling (for autocomplete dropdown)
+    'completion-menu': 'bg:#1a1a1a #ffffff',  # Dark background, white text
+    'completion-menu.completion': 'bg:#1a1a1a #e0e0e0',  # Normal items: light gray text
+    'completion-menu.completion.current': 'bg:#00d7ff #000000 bold',  # Selected: cyan bg, black text, bold
+    'completion-menu.meta': 'bg:#1a1a1a #808080',  # Metadata: gray text
+    'completion-menu.meta.current': 'bg:#00d7ff #000000',  # Selected meta: black text on cyan
 })
 
 
@@ -78,11 +90,51 @@ class InteractiveSession:
         # Command registry
         self.commands = self._register_commands()
 
-        # Setup prompt toolkit
+        # Setup completers
+        workspace_root = Path(os.getcwd())
+        file_completer = FileCompleter(workspace_root, max_suggestions=10)
+
+        # Create command descriptions for completer
+        command_descriptions = {
+            'help': 'Show help message',
+            'exit': 'Exit Vishwa',
+            'quit': 'Exit Vishwa',
+            'clear': 'Clear screen (preserves conversation)',
+            'reset': 'Clear conversation history',
+            'files': 'Show files in context',
+            'model': 'Switch LLM model',
+            'models': 'List available models',
+        }
+        command_completer = CommandCompleter(command_descriptions)
+
+        # Merge completers for @ and / support
+        merged_completer = MergedCompleter(file_completer, command_completer)
+
+        # Setup custom key bindings for better autocomplete UX
+        kb = KeyBindings()
+
+        # Make Enter accept completion without submitting when completion menu is visible
+        # This allows user to select a file with Enter and continue typing their question
+        @kb.add('enter', filter=completion_is_selected)
+        def _(event):
+            """Accept the selected completion and keep the prompt open."""
+            # Get the current buffer and completion
+            buffer = event.current_buffer
+
+            # Apply the currently selected completion
+            if buffer.complete_state:
+                current_completion = buffer.complete_state.current_completion
+                if current_completion:
+                    buffer.apply_completion(current_completion)
+
+        # Setup prompt toolkit with merged completer
         history_file = Path.home() / ".vishwa_history"
         self.prompt_session = PromptSession(
             history=FileHistory(str(history_file)),
             style=STYLE,
+            completer=merged_completer,
+            complete_while_typing=True,
+            key_bindings=kb,
         )
 
     def start(self):
@@ -181,6 +233,9 @@ class InteractiveSession:
         start_time = time.time()
         self.console.print()  # Add spacing before task execution
 
+        # Process @ file mentions and load files into context
+        self._process_file_mentions(task)
+
         # Run agent with context preservation for interactive mode
         result = self.agent.run(task, clear_context=False)
 
@@ -208,6 +263,59 @@ class InteractiveSession:
             self.console.print(f"[red]✗ {result.message}[/red]")
 
         self.console.print()
+
+    def _process_file_mentions(self, task: str):
+        """
+        Parse @ file mentions from user input and load files into context.
+
+        Args:
+            task: User input that may contain @filepath mentions
+        """
+        # Pattern to match @filepath (supports spaces if quoted, or non-space paths)
+        # Matches: @path/to/file.py or @"path with spaces/file.py"
+        # Stops at punctuation: comma, space, newline, etc.
+        pattern = r'@(?:"([^"]+)"|([^\s,;:!?\n]+))'
+
+        matches = re.finditer(pattern, task)
+
+        for match in matches:
+            # Get the filepath (either from quoted or unquoted group)
+            filepath_str = match.group(1) if match.group(1) else match.group(2)
+
+            if not filepath_str:
+                continue
+
+            # Resolve path (can be absolute or relative to workspace)
+            filepath = Path(filepath_str)
+
+            # If relative, resolve from workspace root
+            if not filepath.is_absolute():
+                workspace_root = Path(os.getcwd())
+                filepath = workspace_root / filepath
+
+            # Try to read and load the file into context
+            try:
+                if filepath.exists() and filepath.is_file():
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+
+                    # Add file to agent's context
+                    relative_path = str(filepath.relative_to(Path(os.getcwd())))
+                    self.agent.context.add_file_to_context(relative_path, content)
+
+                    # Show confirmation
+                    self.console.print(
+                        f"[dim]📄 Loaded: {relative_path}[/dim]"
+                    )
+                else:
+                    self.console.print(
+                        f"[yellow]⚠ File not found: {filepath_str}[/yellow]"
+                    )
+
+            except Exception as e:
+                self.console.print(
+                    f"[yellow]⚠ Could not read {filepath_str}: {e}[/yellow]"
+                )
 
     def _execute_command(self, cmd_input: str):
         """
@@ -265,6 +373,10 @@ class InteractiveSession:
         table.add_row("/models", "List available models")
 
         self.console.print(table)
+        self.console.print()
+        self.console.print("[cyan]File Context:[/cyan]")
+        self.console.print("  Type [cyan]@[/cyan] to autocomplete and reference files")
+        self.console.print("  Example: [dim]Fix the bug in @src/main.py[/dim]")
         self.console.print()
 
     def _cmd_exit(self, args: List[str]):
