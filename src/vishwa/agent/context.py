@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from vishwa.llm.response import ToolCall
 from vishwa.tools.base import ToolResult
+from vishwa.utils.logger import logger
 
 
 @dataclass
@@ -197,6 +198,9 @@ class ContextManager:
         )
         self.modifications.append(modification)
 
+        # Log modification
+        logger.context_file_mod(file_path, tool)
+
     def mark_file_created(self, file_path: str) -> None:
         """
         Mark a file as created in this session.
@@ -269,6 +273,8 @@ class ContextManager:
         if not self.is_approaching_limit():
             return
 
+        before_tokens = self.estimate_tokens()
+
         # Step 1: Remove non-modified files
         modified_files = {mod.file_path for mod in self.modifications}
         for path in list(self.files_in_context.keys()):
@@ -297,6 +303,9 @@ class ContextManager:
                 if msg.role == "tool" and msg.content and len(msg.content) > 1000:
                     # Truncate long tool outputs to 1000 chars
                     msg.content = msg.content[:1000] + "\n... (output truncated)"
+
+        after_tokens = self.estimate_tokens()
+        logger.context_pruned(before_tokens, after_tokens)
 
     def get_summary(self) -> str:
         """
@@ -335,3 +344,4 @@ class ContextManager:
         self.modifications.clear()
         self.recent_tool_outputs.clear()
         self.created_files.clear()
+        logger.context_clear()

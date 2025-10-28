@@ -15,6 +15,7 @@ from vishwa.agent import VishwaAgent
 from vishwa.cli import ui
 from vishwa.llm import LLMFactory
 from vishwa.tools import ToolRegistry
+from vishwa.utils.logger import logger
 
 
 @click.group(invoke_without_command=True)
@@ -46,6 +47,28 @@ from vishwa.tools import ToolRegistry
     default=True,
     help="Show detailed output",
 )
+@click.option(
+    "--log-level",
+    default="INFO",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    help="Logging level (creates separate files per level)",
+    show_default=True,
+)
+@click.option(
+    "--log-dir",
+    default=None,
+    help="Log directory (default: logs/YYYY-MM-DD/)",
+)
+@click.option(
+    "--log-json",
+    is_flag=True,
+    help="Use JSON format for logs (machine-readable)",
+)
+@click.option(
+    "--no-log",
+    is_flag=True,
+    help="Disable file logging",
+)
 @click.pass_context
 def main(
     ctx,
@@ -55,6 +78,10 @@ def main(
     auto_approve: bool,
     fallback: str,
     verbose: bool,
+    log_level: str,
+    log_dir: str,
+    log_json: bool,
+    no_log: bool,
 ):
     """
     Vishwa - Terminal-based Agentic Coding Assistant
@@ -71,6 +98,20 @@ def main(
     """
     # Load environment variables
     load_dotenv()
+
+    # Configure logging (enabled by default unless --no-log is used)
+    logger.configure(
+        level=log_level,
+        log_dir=log_dir,
+        json_mode=log_json,
+        enable_logging=not no_log,
+    )
+
+    # Show log directory if logging is enabled
+    if not no_log and verbose:
+        log_dir_path = logger.get_log_directory()
+        if log_dir_path:
+            print(f"Logging to: {log_dir_path.absolute()}\n")
 
     # If no task provided, enter interactive mode or show help
     if not task:

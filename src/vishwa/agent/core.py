@@ -13,6 +13,7 @@ from vishwa.llm.base import BaseLLM, LLMError
 from vishwa.llm.response import LLMResponse, ToolCall
 from vishwa.prompts import get_platform_commands, get_system_prompt
 from vishwa.tools.base import Tool, ToolNotFoundError, ToolRegistry, ToolResult
+from vishwa.utils.logger import logger
 
 
 @dataclass
@@ -88,6 +89,9 @@ class VishwaAgent:
         self.iteration = 0
         self.stop_reason = None
 
+        # Log agent start
+        logger.agent_start(task, self.max_iterations)
+
         # Initialize context with task
         if clear_context:
             self.context.clear()
@@ -96,8 +100,15 @@ class VishwaAgent:
         # Main ReAct loop
         for self.iteration in range(1, self.max_iterations + 1):
             try:
+                # Log iteration start
+                logger.agent_iteration(self.iteration, self.max_iterations)
+
                 # Step 1: Get LLM response (Thought + Action)
                 response = self._get_llm_response()
+
+                # Log agent thinking
+                if response.content:
+                    logger.agent_thinking(response.content)
 
                 # Step 2: Check if this is a conversational response (no tools)
                 if not response.has_tool_calls():
@@ -106,6 +117,8 @@ class VishwaAgent:
                         # This is a conversational response (greeting, clarification, etc.)
                         # Don't print task header or iteration for conversational responses
                         self.stop_reason = "conversational_response"
+                        logger.agent_decision("stop", "conversational response",
+                                            content_length=len(response.content))
                         return AgentResult(
                             success=True,
                             message=response.content,
@@ -116,6 +129,7 @@ class VishwaAgent:
                     else:
                         # LLM didn't call any tools and didn't provide content
                         self.stop_reason = "no_action"
+                        logger.agent_decision("stop", "no action taken")
                         return self._finalize_incomplete(
                             "Agent did not call any tools or provide a response"
                         )
@@ -131,6 +145,7 @@ class VishwaAgent:
                 # Step 3: Check if done (Final Answer)
                 if self._is_final_answer(response):
                     self.stop_reason = "final_answer"
+                    logger.agent_decision("stop", "final answer detected")
                     return self._finalize_success(response.content or "Task completed")
 
                 # Step 4: Execute tool calls (Action → Observation)
@@ -146,22 +161,27 @@ class VishwaAgent:
 
                 # Step 5: Check stopping conditions
                 if self._should_stop():
+                    logger.agent_decision("stop", f"stopping condition met: {self.stop_reason}")
                     return self._finalize_success("Stopping conditions met")
 
             except LLMError as e:
                 self.stop_reason = "llm_error"
+                logger.error("agent", f"LLM error: {str(e)}", exception=e)
                 return self._finalize_error(f"LLM error: {str(e)}")
 
             except KeyboardInterrupt:
                 self.stop_reason = "user_interrupt"
+                logger.agent_decision("stop", "user interrupt")
                 return self._finalize_incomplete("Interrupted by user")
 
             except Exception as e:
                 self.stop_reason = "unexpected_error"
+                logger.error("agent", f"Unexpected error: {str(e)}", exception=e)
                 return self._finalize_error(f"Unexpected error: {str(e)}")
 
         # Max iterations reached
         self.stop_reason = "max_iterations"
+        logger.agent_decision("stop", "max iterations reached")
         return self._finalize_incomplete(
             f"Max iterations ({self.max_iterations}) reached"
         )
@@ -177,11 +197,35 @@ class VishwaAgent:
         messages = self.context.get_messages()
         tools = self.tools.to_openai_format()
 
-        return self.llm.chat(
+        # Log LLM request
+        logger.llm_request(
+            provider=self.llm.provider_name,
+            model=self.llm.model_name,
+            msg_count=len(messages),
+            tool_count=len(tools)
+        )
+
+        response = self.llm.chat(
             messages=messages,
             tools=tools,
             system=system_prompt,
         )
+
+        # Log LLM response
+        tokens = None
+        if response.usage:
+            tokens = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens
+            }
+        logger.llm_response(
+            model=response.model,
+            tool_calls=len(response.tool_calls),
+            tokens=tokens
+        )
+
+        return response
 
     def _build_system_prompt(self) -> str:
         """
@@ -247,29 +291,40 @@ class VishwaAgent:
         tool_name = tool_call.name
         arguments = tool_call.arguments
 
+        # Log tool call
+        logger.tool_start(tool_name, arguments)
+
         if self.verbose:
             print(f"→ {tool_name}({', '.join(f'{k}={v!r}' for k, v in arguments.items())})")
 
         # Get tool
         tool = self.tools.get(tool_name)
         if not tool:
-            return ToolResult(
+            result = ToolResult(
                 success=False,
                 error=f"Tool not found: {tool_name}",
                 suggestion="Use one of the available tools",
             )
+            logger.tool_result(tool_name, False, None, result.error)
+            return result
 
         # Check if needs approval
         if self._needs_approval(tool_call):
+            logger.tool_approval(tool_name, False, "approval required")
             approval_result = self._get_user_approval(tool_call)
             if not approval_result:
+                logger.tool_approval(tool_name, False, "user rejected")
                 # Ask user for feedback on why they rejected it
                 feedback = self._get_rejection_feedback(tool_call)
-                return ToolResult(
+                result = ToolResult(
                     success=False,
                     error="Action rejected by user",
                     suggestion=feedback if feedback else "User rejected without feedback",
                 )
+                logger.tool_result(tool_name, False, None, result.error)
+                return result
+            else:
+                logger.tool_approval(tool_name, True, "user approved")
 
         # Check if trying to create a file that was already created this session
         if tool_name == "write_file":
@@ -284,6 +339,9 @@ class VishwaAgent:
         # Execute tool
         try:
             result = tool.execute(**arguments)
+
+            # Log tool result
+            logger.tool_result(tool_name, result.success, result.output, result.error)
 
             # Track file creation
             if tool_name == "write_file" and result.success:
@@ -307,10 +365,13 @@ class VishwaAgent:
             return result
 
         except Exception as e:
-            return ToolResult(
+            result = ToolResult(
                 success=False,
                 error=f"Tool execution failed: {str(e)}",
             )
+            logger.tool_result(tool_name, False, None, result.error)
+            logger.error("tool", f"Exception during {tool_name} execution", exception=e)
+            return result
 
     def _needs_approval(self, tool_call: ToolCall) -> bool:
         """
@@ -456,6 +517,12 @@ class VishwaAgent:
 
     def _finalize_success(self, message: str) -> AgentResult:
         """Finalize with success"""
+        logger.agent_complete(
+            reason=self.stop_reason or "completed",
+            iterations=self.iteration,
+            success=True
+        )
+
         if self.verbose:
             print(f"\n✅ {message}\n")
 
@@ -469,6 +536,12 @@ class VishwaAgent:
 
     def _finalize_incomplete(self, message: str) -> AgentResult:
         """Finalize with incomplete status"""
+        logger.agent_complete(
+            reason=self.stop_reason or "incomplete",
+            iterations=self.iteration,
+            success=False
+        )
+
         if self.verbose:
             print(f"\n⚠️  {message}\n")
 
@@ -482,6 +555,12 @@ class VishwaAgent:
 
     def _finalize_error(self, message: str) -> AgentResult:
         """Finalize with error"""
+        logger.agent_complete(
+            reason=self.stop_reason or "error",
+            iterations=self.iteration,
+            success=False
+        )
+
         if self.verbose:
             print(f"\n❌ {message}\n")
 
