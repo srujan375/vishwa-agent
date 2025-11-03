@@ -23,14 +23,17 @@ class BashTool(Tool):
     - Commands are executed in the current working directory
     - No input sanitization (agent is trusted)
     - Timeout of 120 seconds by default
+    - Risky commands require user approval
     """
 
-    def __init__(self, timeout: int = 120) -> None:
+    def __init__(self, timeout: int = 120, auto_approve: bool = False) -> None:
         """
         Args:
             timeout: Maximum execution time in seconds (default: 120)
+            auto_approve: Skip approval for risky commands (default: False)
         """
         self.timeout = timeout
+        self.auto_approve = auto_approve
 
     @property
     def name(self) -> str:
@@ -65,6 +68,25 @@ Commands timeout after 120 seconds.
             "required": ["command"],
         }
 
+    def _is_risky_command(self, command: str) -> bool:
+        """Check if command is risky and needs approval."""
+        risky_patterns = [
+            "rm ",
+            "mv ",
+            "git push",
+            "git reset",
+            "git rebase",
+            "git force",
+            "chmod",
+            "chown",
+            "sudo",
+            "dd ",
+            "mkfs",
+            "fdisk",
+            "> ",  # Redirection could overwrite files
+        ]
+        return any(pattern in command for pattern in risky_patterns)
+
     def execute(self, **kwargs: Any) -> ToolResult:
         """
         Execute a shell command.
@@ -77,6 +99,23 @@ Commands timeout after 120 seconds.
         """
         self.validate_params(**kwargs)
         command = kwargs["command"]
+
+        # Check if command is risky and needs approval
+        if self._is_risky_command(command) and not self.auto_approve:
+            from vishwa.cli.ui import confirm_action
+            from rich.console import Console
+
+            console = Console()
+            console.print(f"\n[yellow bold]⚠️  Risky command detected:[/yellow bold]")
+            console.print(f"[dim]{command}[/dim]\n")
+
+            if not confirm_action("Execute this command?", default=False):
+                return ToolResult(
+                    success=False,
+                    error="User rejected risky command",
+                    suggestion="Command was not executed",
+                    metadata={"command": command},
+                )
 
         try:
             # Execute command

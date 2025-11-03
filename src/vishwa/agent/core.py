@@ -62,7 +62,7 @@ class VishwaAgent:
             verbose: Print progress to console
         """
         self.llm = llm
-        self.tools = tools or ToolRegistry.load_default()
+        self.tools = tools or ToolRegistry.load_default(auto_approve=auto_approve)
         self.max_iterations = max_iterations
         self.auto_approve = auto_approve
         self.verbose = verbose
@@ -73,14 +73,15 @@ class VishwaAgent:
         self.stop_reason = None
         self.task = ""
 
-    def run(self, task: str, clear_context: bool = True) -> AgentResult:
+    def run(self, task: str, clear_context: bool = False) -> AgentResult:
         """
         Execute the agent loop for a given task.
 
         Args:
             task: The task to accomplish
-            clear_context: Whether to clear context before running (default: True).
-                          Set to False for interactive sessions to maintain conversation history.
+            clear_context: Whether to clear context before running (default: False).
+                          Context is retained by default for conversational flow.
+                          Set to True to start fresh (useful for new unrelated tasks).
 
         Returns:
             AgentResult with success/failure and details
@@ -106,26 +107,73 @@ class VishwaAgent:
                 # Step 1: Get LLM response (Thought + Action)
                 response = self._get_llm_response()
 
-                # Log agent thinking
-                if response.content:
+                # Step 2: Show LLM's thinking/message if present
+                if response.content and response.content.strip() and self.verbose:
+                    # Print the LLM's message with markdown rendering
+                    from rich.markdown import Markdown
+                    from rich.console import Console
+
+                    console = Console()
+                    console.print(Markdown(response.content))
                     logger.agent_thinking(response.content)
 
-                # Step 2: Check if this is a conversational response (no tools)
+                # Step 3: Check if this is purely conversational (no tools, no task context)
                 if not response.has_tool_calls():
-                    # No tool calls - check if there's a text response
+                    # No tool calls - check if there's content
                     if response.content and response.content.strip():
-                        # This is a conversational response (greeting, clarification, etc.)
-                        # Don't print task header or iteration for conversational responses
-                        self.stop_reason = "conversational_response"
-                        logger.agent_decision("stop", "conversational response",
-                                            content_length=len(response.content))
-                        return AgentResult(
-                            success=True,
-                            message=response.content,
-                            iterations_used=self.iteration,
-                            modifications=self.context.modifications,
-                            stop_reason="conversational_response",
-                        )
+                        # Check for repeated identical messages (stuck in loop)
+                        recent_messages = self.context.get_messages()
+                        if len(recent_messages) >= 2:
+                            last_assistant_msg = None
+                            for msg in reversed(recent_messages):
+                                if msg.get("role") == "assistant":
+                                    last_assistant_msg = msg.get("content", "")
+                                    break
+
+                            # If this exact message was just sent, we're stuck
+                            if last_assistant_msg and last_assistant_msg.strip() == response.content.strip():
+                                self.stop_reason = "repeated_message"
+                                logger.agent_decision("stop", "LLM repeating same message")
+                                return self._finalize_incomplete(
+                                    f"Agent appears stuck (repeating same message). Last message: {response.content[:100]}..."
+                                )
+
+                        # Add message to context for next iteration
+                        self.context.add_message("assistant", response.content)
+
+                        # Check if this seems like a final answer or just mid-task commentary
+                        if self._is_final_answer(response):
+                            # This is the final answer
+                            self.stop_reason = "final_answer"
+                            logger.agent_decision("stop", "final answer (no tools)")
+                            return AgentResult(
+                                success=True,
+                                message=response.content,
+                                iterations_used=self.iteration,
+                                modifications=self.context.modifications,
+                                stop_reason="final_answer",
+                            )
+                        else:
+                            # This is mid-task commentary - continue loop
+                            # But limit consecutive text-only responses to prevent infinite loops
+                            # Count consecutive assistant messages without tools
+                            consecutive_text_only = 0
+                            for msg in reversed(recent_messages):
+                                if msg.get("role") == "assistant":
+                                    consecutive_text_only += 1
+                                elif msg.get("role") == "tool":
+                                    break
+
+                            if consecutive_text_only >= 3:
+                                # Too many text responses without action
+                                self.stop_reason = "too_many_text_responses"
+                                logger.agent_decision("stop", "too many text-only responses without tool calls")
+                                return self._finalize_incomplete(
+                                    "Agent is thinking but not taking action. Please try rephrasing your request or provide more specific instructions."
+                                )
+
+                            logger.agent_decision("continue", "text-only response, continuing loop")
+                            continue
                     else:
                         # LLM didn't call any tools and didn't provide content
                         self.stop_reason = "no_action"
@@ -134,15 +182,7 @@ class VishwaAgent:
                             "Agent did not call any tools or provide a response"
                         )
 
-                # This is a tool-based task - show task header on first iteration
-                if self.iteration == 1 and self.verbose:
-                    print(f"\n🎯 Task: {task}\n")
-
-                # Show iteration counter for tool-based tasks
-                if self.verbose:
-                    print(f"[{self.iteration}/{self.max_iterations}] ", end="", flush=True)
-
-                # Step 3: Check if done (Final Answer)
+                # Step 4: Check if done (Final Answer with tools)
                 if self._is_final_answer(response):
                     self.stop_reason = "final_answer"
                     logger.agent_decision("stop", "final answer detected")
@@ -294,8 +334,8 @@ class VishwaAgent:
         # Log tool call
         logger.tool_start(tool_name, arguments)
 
-        if self.verbose:
-            print(f"→ {tool_name}({', '.join(f'{k}={v!r}' for k, v in arguments.items())})")
+        # Note: Tool syntax is hidden - tools handle their own preview/approval
+        # The conversational output is shown by the LLM's messages instead
 
         # Get tool
         tool = self.tools.get(tool_name)
@@ -307,24 +347,6 @@ class VishwaAgent:
             )
             logger.tool_result(tool_name, False, None, result.error)
             return result
-
-        # Check if needs approval
-        if self._needs_approval(tool_call):
-            logger.tool_approval(tool_name, False, "approval required")
-            approval_result = self._get_user_approval(tool_call)
-            if not approval_result:
-                logger.tool_approval(tool_name, False, "user rejected")
-                # Ask user for feedback on why they rejected it
-                feedback = self._get_rejection_feedback(tool_call)
-                result = ToolResult(
-                    success=False,
-                    error="Action rejected by user",
-                    suggestion=feedback if feedback else "User rejected without feedback",
-                )
-                logger.tool_result(tool_name, False, None, result.error)
-                return result
-            else:
-                logger.tool_approval(tool_name, True, "user approved")
 
         # Check if trying to create a file that was already created this session
         if tool_name == "write_file":
@@ -354,13 +376,8 @@ class VishwaAgent:
                     tool=tool_name,
                 )
 
-            if self.verbose:
-                status = "✓" if result.success else "✗"
-                output = result.output or result.error
-                # Truncate long output
-                if output and len(output) > 200:
-                    output = output[:200] + "..."
-                print(f"  {status} {output}")
+            # Note: Tool results are hidden - tools show their own diffs/output
+            # Errors are still logged but not printed (LLM will see them and can explain)
 
             return result
 
@@ -372,122 +389,6 @@ class VishwaAgent:
             logger.tool_result(tool_name, False, None, result.error)
             logger.error("tool", f"Exception during {tool_name} execution", exception=e)
             return result
-
-    def _needs_approval(self, tool_call: ToolCall) -> bool:
-        """
-        Check if tool call needs user approval.
-
-        Args:
-            tool_call: Tool call to check
-
-        Returns:
-            True if approval needed
-        """
-        if self.auto_approve:
-            return False
-
-        # Always ask for destructive operations
-        if tool_call.name in ["str_replace", "write_file"]:
-            return True
-
-        # Ask for risky bash commands
-        if tool_call.name == "bash":
-            command = tool_call.arguments.get("command", "")
-            risky_patterns = ["rm ", "mv ", "git push", "git reset", "git rebase"]
-            if any(pattern in command for pattern in risky_patterns):
-                return True
-
-        return False
-
-    def _get_rejection_feedback(self, tool_call: ToolCall) -> str:
-        """
-        Ask user for feedback when they reject a tool call.
-
-        This helps the agent understand what needs to be changed instead of
-        blindly retrying the same approach.
-
-        Args:
-            tool_call: The tool call that was rejected
-
-        Returns:
-            User's feedback as a string
-        """
-        from rich.console import Console
-        from prompt_toolkit import prompt as pt_prompt
-
-        console = Console()
-
-        console.print("\n[yellow]💬 Help me understand:[/yellow]")
-        console.print("[dim]What would you like me to change about this approach?[/dim]")
-        console.print("[dim](Press Enter to skip, or Ctrl+C to cancel the task)[/dim]\n")
-
-        try:
-            feedback = pt_prompt("Your feedback: ", multiline=False)
-            return feedback.strip() if feedback.strip() else None
-        except (KeyboardInterrupt, EOFError):
-            console.print("\n[yellow]Task cancelled by user[/yellow]")
-            raise KeyboardInterrupt()
-
-    def _get_user_approval(self, tool_call: ToolCall) -> bool:
-        """
-        Get user approval for tool call with interactive buttons.
-
-        Shows preview for file operations.
-
-        Args:
-            tool_call: Tool call to approve
-
-        Returns:
-            True if approved
-        """
-        from vishwa.cli.ui import confirm_action, show_diff
-
-        # Show preview for write_file
-        if tool_call.name == "write_file":
-            path = tool_call.arguments.get("path", "")
-            content = tool_call.arguments.get("content", "")
-
-            print(f"\n📝 Creating new file: {path}")
-            print("=" * 60)
-
-            # Show content with line numbers (limited preview)
-            lines = content.split('\n')
-            preview_lines = min(len(lines), 30)  # Show max 30 lines
-
-            for i, line in enumerate(lines[:preview_lines], 1):
-                print(f"{i:3d} | {line}")
-
-            if len(lines) > preview_lines:
-                print(f"... ({len(lines) - preview_lines} more lines)")
-
-            print("=" * 60)
-            print(f"Total: {len(lines)} lines, {len(content)} characters\n")
-
-            return confirm_action(f"Create file '{path}'?", default=False)
-
-        # Show preview for str_replace
-        elif tool_call.name == "str_replace":
-            path = tool_call.arguments.get("path", "")
-            old_str = tool_call.arguments.get("old_str", "")
-            new_str = tool_call.arguments.get("new_str", "")
-
-            print(f"\n📝 Modifying file: {path}")
-
-            # Use the fancy diff display
-            show_diff(path, old_str, new_str)
-
-            return confirm_action(f"Apply changes to '{path}'?", default=False)
-
-        else:
-            # For other operations, use interactive confirmation
-            args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.arguments.items())
-            if len(args_preview) > 100:
-                args_preview = args_preview[:100] + "..."
-
-            return confirm_action(
-                f"Execute {tool_call.name}({args_preview})?",
-                default=False
-            )
 
     def _should_stop(self) -> bool:
         """
@@ -517,6 +418,11 @@ class VishwaAgent:
 
     def _finalize_success(self, message: str) -> AgentResult:
         """Finalize with success"""
+        # Close any pending VS Code tabs before finalizing
+        from vishwa.cli.ui import is_vscode, _close_tabs_immediately, _pending_tab_close
+        if is_vscode() and _pending_tab_close:
+            _close_tabs_immediately()
+
         logger.agent_complete(
             reason=self.stop_reason or "completed",
             iterations=self.iteration,
@@ -536,6 +442,11 @@ class VishwaAgent:
 
     def _finalize_incomplete(self, message: str) -> AgentResult:
         """Finalize with incomplete status"""
+        # Close any pending VS Code tabs before finalizing
+        from vishwa.cli.ui import is_vscode, _close_tabs_immediately, _pending_tab_close
+        if is_vscode() and _pending_tab_close:
+            _close_tabs_immediately()
+
         logger.agent_complete(
             reason=self.stop_reason or "incomplete",
             iterations=self.iteration,
@@ -555,6 +466,11 @@ class VishwaAgent:
 
     def _finalize_error(self, message: str) -> AgentResult:
         """Finalize with error"""
+        # Close any pending VS Code tabs before finalizing
+        from vishwa.cli.ui import is_vscode, _close_tabs_immediately, _pending_tab_close
+        if is_vscode() and _pending_tab_close:
+            _close_tabs_immediately()
+
         logger.agent_complete(
             reason=self.stop_reason or "error",
             iterations=self.iteration,
