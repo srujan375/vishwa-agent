@@ -8,6 +8,7 @@ Manages:
 - Context pruning when approaching token limits
 """
 
+import json
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -126,7 +127,7 @@ class ContextManager:
                     "type": "function",
                     "function": {
                         "name": tool_call.name,
-                        "arguments": str(tool_call.arguments),
+                        "arguments": json.dumps(tool_call.arguments),
                     },
                 }
             ],

@@ -47,29 +47,21 @@
     },
     "ollama": {
       "models": {
-        "deepseek-coder:33b": {
-          "name": "deepseek-coder:33b",
-          "description": "DeepSeek Coder 33B - Excellent for coding tasks"
+        "deepseek-r1:latest": {
+          "name": "deepseek-r1:latest",
+          "description": "DeepSeek R1 - Advanced reasoning model"
         },
-        "qwen2.5-coder:32b": {
-          "name": "qwen2.5-coder:32b",
-          "description": "Qwen 2.5 Coder 32B - Strong coding performance"
+        "glm-4.6:cloud": {
+          "name": "glm-4.6:cloud",
+          "description": "GLM-4.6 Cloud - Best open-source model"
         },
-        "codestral:22b": {
-          "name": "codestral:22b",
-          "description": "Codestral 22B - Mistral's code model"
+        "gpt-oss:120b-cloud": {
+          "name": "gpt-oss:120b-cloud",
+          "description": "GPT-OSS 120B Cloud - Large cloud model"
         },
-        "llama3.1": {
-          "name": "llama3.1",
-          "description": "Llama 3.1 - General purpose model"
-        },
-        "llama3.1:8b": {
-          "name": "llama3.1:8b",
-          "description": "Llama 3.1 8B - Smaller, faster variant"
-        },
-        "llama3.1:70b": {
-          "name": "llama3.1:70b",
-          "description": "Llama 3.1 70B - Larger, more capable variant"
+        "gpt-oss:20b-cloud": {
+          "name": "gpt-oss:20b-cloud",
+          "description": "GPT-OSS 20B Cloud - Smaller cloud model"
         }
       }
     }
@@ -81,7 +73,9 @@
     "haiku": "claude-haiku-4-5",
     "openai": "gpt-4o",
     "gpt": "gpt-4o",
-    "local": "deepseek-coder:33b",
-    "ollama": "deepseek-coder:33b"
+    "local": "gpt-oss:20b-cloud",
+    "ollama": "gpt-oss:20b-cloud",
+    "glm": "glm-4.6:cloud",
+    "deepseek": "deepseek-r1:latest"
   }
 }

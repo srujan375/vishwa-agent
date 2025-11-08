@@ -190,6 +190,9 @@ def _run_interactive(
     from vishwa.cli.interactive import InteractiveSession
     from vishwa.config import Config
 
+    # Create console first, before try block
+    console = Console()
+
     try:
         # Create config
         config = Config()
@@ -214,9 +217,6 @@ def _run_interactive(
             verbose=True,  # Show tool execution and progress
         )
 
-        # Create console
-        console = Console()
-
         # Start interactive session
         session = InteractiveSession(agent=agent, config=config, console=console)
         session.start()
@@ -226,7 +226,7 @@ def _run_interactive(
         sys.exit(130)
 
     except Exception as e:
-        console.print(f"[red]✗ Error:[/red] {str(e)}")
+        console.print(f"[red] Error:[/red] {str(e)}")
         if verbose:
             import traceback
             traceback.print_exc()
