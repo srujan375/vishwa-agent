@@ -76,6 +76,8 @@ class ContextManager:
         self.modifications: List[Modification] = []
         self.recent_tool_outputs: deque = deque(maxlen=10)
         self.created_files: set = set()  # Track files created in this session
+        self.file_summaries: Dict[str, str] = {}  # Summaries of removed files
+        self.message_importance: Dict[int, int] = {}  # Message importance scores
 
     def add_message(
         self,
@@ -226,11 +228,58 @@ class ContextManager:
         """
         Estimate current token usage.
 
-        Rough estimate: ~4 characters per token
-        More accurate: use tiktoken library (optional dependency)
+        Uses tiktoken for accurate counting if available,
+        falls back to rough estimation (chars/4) if not.
 
         Returns:
             Estimated token count
+        """
+        try:
+            import tiktoken
+            return self._count_tokens_accurate()
+        except ImportError:
+            return self._count_tokens_rough()
+
+    def _count_tokens_accurate(self) -> int:
+        """
+        Accurate token counting using tiktoken.
+
+        Returns:
+            Exact token count
+        """
+        import tiktoken
+
+        # Use cl100k_base encoding (used by GPT-4, Claude)
+        try:
+            encoder = tiktoken.get_encoding("cl100k_base")
+        except:
+            # Fallback to rough if encoding not available
+            return self._count_tokens_rough()
+
+        total_tokens = 0
+
+        # Count message tokens
+        for msg in self.messages:
+            if msg.content:
+                total_tokens += len(encoder.encode(msg.content))
+
+            # Count tool call arguments
+            if msg.tool_calls:
+                for tool_call in msg.tool_calls:
+                    total_tokens += len(encoder.encode(str(tool_call)))
+
+        # Count files in context
+        for content in self.files_in_context.values():
+            total_tokens += len(encoder.encode(content))
+
+        return total_tokens
+
+    def _count_tokens_rough(self) -> int:
+        """
+        Rough token estimation (fallback).
+
+        Returns:
+            Approximate token count
         """
         total_chars = 0
 
@@ -265,47 +314,238 @@ class ContextManager:
         """
         Prune context if approaching token limit.
 
-        Strategy:
-        1. Remove old file contents (keep modified ones)
-        2. Remove older messages, keeping only recent context
-        3. Keep first user message (the task) and last 15 messages
+        New improved strategy:
+        1. Summarize files instead of deleting
+        2. Use dependency graph to keep related files
+        3. Score messages by importance
+        4. Prune least important first
+        5. Summarize message groups instead of deleting
         """
         if not self.is_approaching_limit():
             return
 
         before_tokens = self.estimate_tokens()
 
-        # Step 1: Remove non-modified files
+        # Step 1: Summarize and remove non-critical files
+        self._prune_files_with_summarization()
+
+        # Step 2: If still too large, prune messages by importance
+        if self.is_approaching_limit():
+            self._prune_messages_by_importance()
+
+        # Step 3: If STILL too large, aggressive truncation
+        if self.is_approaching_limit():
+            self._aggressive_truncation()
+
+        after_tokens = self.estimate_tokens()
+        logger.context_pruned(before_tokens, after_tokens)
+
+    def _prune_files_with_summarization(self) -> None:
+        """
+        Remove files from context but keep summaries.
+
+        Uses dependency graph to keep related files together.
+        """
         modified_files = {mod.file_path for mod in self.modifications}
+
+        # Try to get dependency graph
+        important_files = set(modified_files)
+        try:
+            from vishwa.code_intelligence import get_dependency_graph
+            graph = get_dependency_graph()
+
+            # Keep files related to modifications
+            for file_path in modified_files:
+                # Keep dependencies
+                deps = graph.get_dependencies(file_path)
+                important_files.update(deps)
+
+                # Keep direct dependents
+                dependents = graph.get_dependents(file_path)
+                important_files.update(dependents[:3])  # Limit to 3 closest
+
+        except Exception:
+            # If dependency graph not available, just use modified files
+            pass
+
+        # Remove files not in important set, but summarize first
         for path in list(self.files_in_context.keys()):
-            if path not in modified_files:
+            if path not in important_files:
+                # Create summary before removing
+                summary = self._summarize_file(path)
+                self.file_summaries[path] = summary
+
+                # Remove full content
                 del self.files_in_context[path]
 
-        # Step 2: If still too large, aggressively prune messages
-        if self.is_approaching_limit() and len(self.messages) > 15:
-            # Keep first user message (the task) and last 14 messages
+    def _summarize_file(self, path: str) -> str:
+        """
+        Create a smart summary of a file.
+
+        Uses structure analysis if available.
+        """
+        try:
+            from vishwa.code_intelligence import get_structure
+            from pathlib import Path
+
+            structure = get_structure(path)
+
+            summary = f"[Summary of {Path(path).name}]\n"
+            summary += f"Lines: {structure.total_lines}\n"
+            summary += f"Language: {structure.language}\n"
+
+            if structure.imports:
+                summary += f"Imports ({len(structure.imports)}): "
+                summary += ", ".join(structure.imports[:5])
+                if len(structure.imports) > 5:
+                    summary += f" ... and {len(structure.imports) - 5} more"
+                summary += "\n"
+
+            if structure.classes:
+                summary += f"Classes ({len(structure.classes)}): "
+                summary += ", ".join(name for name, _ in structure.classes[:5])
+                if len(structure.classes) > 5:
+                    summary += f" ... and {len(structure.classes) - 5} more"
+                summary += "\n"
+
+            if structure.functions:
+                summary += f"Functions ({len(structure.functions)}): "
+                summary += ", ".join(name for name, _ in structure.functions[:5])
+                if len(structure.functions) > 5:
+                    summary += f" ... and {len(structure.functions) - 5} more"
+                summary += "\n"
+
+            return summary
+
+        except Exception:
+            # Fallback: basic summary
+            content = self.files_in_context.get(path, "")
+            return f"[Summary of {path}]\nSize: {len(content)} chars\n"
+
+    def _calculate_message_importance(self, msg_idx: int) -> int:
+        """
+        Calculate importance score for a message (0-100).
+
+        Factors:
+        - File modifications = very important
+        - Errors = less important
+        - Recency = more important
+        - Referenced later = important
+        """
+        if msg_idx >= len(self.messages):
+            return 0
+
+        msg = self.messages[msg_idx]
+        score = 50  # Base score
+
+        # Modified files = very important
+        if msg.role == "tool":
+            content_lower = (msg.content or "").lower()
+            if "success" in content_lower:
+                if any(word in content_lower for word in ["wrote", "modified", "created", "replaced"]):
+                    score += 40
+
+        # Errors = less important (can be pruned)
+        if msg.role == "tool" and msg.content and "error" in msg.content.lower():
+            score -= 20
+
+        # Recency = more important
+        recency_factor = (msg_idx / max(len(self.messages), 1)) * 20
+        score += recency_factor
+
+        # User messages = important (preserve conversation)
+        if msg.role == "user":
+            score += 30
+
+        # System messages with summaries = important
+        if msg.role == "system" and "[Summary" in (msg.content or ""):
+            score += 20
+
+        return min(100, max(0, int(score)))
+
+    def _prune_messages_by_importance(self) -> None:
+        """
+        Prune messages based on importance scores.
+
+        Keeps most important messages, removes least important.
+        """
+        if len(self.messages) <= 20:
+            return  # Don't prune if we have few messages
+
+        # Calculate importance for all messages
+        scored_messages = []
+        for idx, msg in enumerate(self.messages):
+            importance = self._calculate_message_importance(idx)
+            scored_messages.append((importance, idx, msg))
+
+        # Sort by importance (descending)
+        scored_messages.sort(reverse=True)
+
+        # Keep top 70% by importance, but at least 20 messages
+        keep_count = max(20, int(len(scored_messages) * 0.7))
+        messages_to_keep_indices = set(idx for _, idx, _ in scored_messages[:keep_count])
+
+        # Always keep first user message (the task)
+        for idx, msg in enumerate(self.messages):
+            if msg.role == "user":
+                messages_to_keep_indices.add(idx)
+                break
+
+        # Always keep last 10 messages (recent context)
+        for idx in range(max(0, len(self.messages) - 10), len(self.messages)):
+            messages_to_keep_indices.add(idx)
+
+        # Rebuild messages list (preserve order)
+        new_messages = []
+        for idx, msg in enumerate(self.messages):
+            if idx in messages_to_keep_indices:
+                new_messages.append(msg)
+            elif idx not in messages_to_keep_indices and idx > 0 and idx < len(self.messages) - 10:
+                # Check if this is part of a sequence we're removing
+                # Add a summary marker
+                if not new_messages or new_messages[-1].role != "system":
+                    summary_msg = Message(
+                        role="system",
+                        content="[Messages pruned - importance-based context management]"
+                    )
+                    new_messages.append(summary_msg)
+
+        self.messages = new_messages
+
+    def _aggressive_truncation(self) -> None:
+        """
+        Last resort: aggressively truncate to fit context.
+
+        Only called if summarization and importance pruning aren't enough.
+        """
+        # Truncate long tool outputs
+        for msg in self.messages:
+            if msg.role == "tool" and msg.content and len(msg.content) > 1000:
+                msg.content = msg.content[:1000] + "\n... (output truncated for context)"
+
+        # If STILL too large, keep only essential messages
+        if self.is_approaching_limit():
+            # Keep first user message + last 15 messages
             first_user_msg = None
             for msg in self.messages:
                 if msg.role == "user":
                     first_user_msg = msg
                     break
 
-            recent_messages = self.messages[-14:]
+            recent_messages = self.messages[-15:]
 
             self.messages = []
             if first_user_msg and first_user_msg not in recent_messages:
                 self.messages.append(first_user_msg)
+
+            # Add summary of what was removed
+            summary_msg = Message(
+                role="system",
+                content=f"[Aggressive pruning: Removed {len(recent_messages)} messages to fit context]"
+            )
+            self.messages.append(summary_msg)
+
             self.messages.extend(recent_messages)
-
-        # Step 3: If STILL too large, truncate tool results in remaining messages
-        if self.is_approaching_limit():
-            for msg in self.messages:
-                if msg.role == "tool" and msg.content and len(msg.content) > 1000:
-                    # Truncate long tool outputs to 1000 chars
-                    msg.content = msg.content[:1000] + "\n... (output truncated)"
-
-        after_tokens = self.estimate_tokens()
-        logger.context_pruned(before_tokens, after_tokens)
 
     def get_summary(self) -> str:
         """
@@ -344,4 +584,6 @@ class ContextManager:
         self.modifications.clear()
         self.recent_tool_outputs.clear()
         self.created_files.clear()
+        self.file_summaries.clear()
+        self.message_importance.clear()
         logger.context_clear()

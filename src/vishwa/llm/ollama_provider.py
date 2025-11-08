@@ -203,3 +203,64 @@ class OllamaProvider(BaseLLM):
             return []
         except Exception:
             return []
+
+    @staticmethod
+    def is_model_available(model_name: str, base_url: Optional[str] = None) -> bool:
+        """
+        Check if a specific Ollama model is available locally.
+
+        Args:
+            model_name: Name of the model to check
+            base_url: Ollama base URL
+
+        Returns:
+            True if model is installed locally
+        """
+        available_models = OllamaProvider.list_available_models(base_url)
+        return model_name in available_models
+
+    @staticmethod
+    def pull_model(model_name: str, base_url: Optional[str] = None, show_progress: bool = True) -> bool:
+        """
+        Pull an Ollama model.
+
+        Args:
+            model_name: Name of the model to pull
+            base_url: Ollama base URL
+            show_progress: Whether to show progress output
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            import subprocess
+
+            if show_progress:
+                print(f"Pulling Ollama model: {model_name}")
+                print("This may take a few minutes for large models...")
+
+            # Run ollama pull command
+            result = subprocess.run(
+                ["ollama", "pull", model_name],
+                capture_output=not show_progress,
+                text=True,
+                check=True
+            )
+
+            if show_progress:
+                print(f"✓ Successfully pulled {model_name}")
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            if show_progress:
+                print(f"✗ Failed to pull model: {e.stderr if e.stderr else str(e)}")
+            return False
+        except FileNotFoundError:
+            if show_progress:
+                print("✗ 'ollama' command not found. Make sure Ollama is installed.")
+            return False
+        except Exception as e:
+            if show_progress:
+                print(f"✗ Error pulling model: {e}")
+            return False

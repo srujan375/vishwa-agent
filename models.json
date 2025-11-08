@@ -1,0 +1,87 @@
+{
+  "default_model": "claude-sonnet-4-5",
+  "providers": {
+    "anthropic": {
+      "models": {
+        "claude-sonnet-4-5": {
+          "name": "claude-sonnet-4-5",
+          "description": "Claude Sonnet 4.5 - Best balance of speed and intelligence"
+        },
+        "claude-sonnet-4": {
+          "name": "claude-sonnet-4",
+          "description": "Claude Sonnet 4 - Previous generation"
+        },
+        "claude-opus-4": {
+          "name": "claude-opus-4",
+          "description": "Claude Opus 4 - Most capable, slower"
+        },
+        "claude-haiku-4-5": {
+          "name": "claude-haiku-4-5",
+          "description": "Claude Haiku 4.5 - Fast and cost-effective"
+        }
+      }
+    },
+    "openai": {
+      "models": {
+        "gpt-4o": {
+          "name": "gpt-4o",
+          "description": "GPT-4 Omni - Latest and most capable"
+        },
+        "gpt-4-turbo": {
+          "name": "gpt-4-turbo-2024-04-09",
+          "description": "GPT-4 Turbo - Fast and capable"
+        },
+        "gpt-4": {
+          "name": "gpt-4",
+          "description": "GPT-4 - Original model"
+        },
+        "o1": {
+          "name": "o1",
+          "description": "o1 - Advanced reasoning model"
+        },
+        "o1-mini": {
+          "name": "o1-mini",
+          "description": "o1-mini - Faster reasoning model"
+        }
+      }
+    },
+    "ollama": {
+      "models": {
+        "deepseek-coder:33b": {
+          "name": "deepseek-coder:33b",
+          "description": "DeepSeek Coder 33B - Excellent for coding tasks"
+        },
+        "qwen2.5-coder:32b": {
+          "name": "qwen2.5-coder:32b",
+          "description": "Qwen 2.5 Coder 32B - Strong coding performance"
+        },
+        "codestral:22b": {
+          "name": "codestral:22b",
+          "description": "Codestral 22B - Mistral's code model"
+        },
+        "llama3.1": {
+          "name": "llama3.1",
+          "description": "Llama 3.1 - General purpose model"
+        },
+        "llama3.1:8b": {
+          "name": "llama3.1:8b",
+          "description": "Llama 3.1 8B - Smaller, faster variant"
+        },
+        "llama3.1:70b": {
+          "name": "llama3.1:70b",
+          "description": "Llama 3.1 70B - Larger, more capable variant"
+        }
+      }
+    }
+  },
+  "aliases": {
+    "claude": "claude-sonnet-4-5",
+    "sonnet": "claude-sonnet-4-5",
+    "opus": "claude-opus-4",
+    "haiku": "claude-haiku-4-5",
+    "openai": "gpt-4o",
+    "gpt": "gpt-4o",
+    "local": "deepseek-coder:33b",
+    "ollama": "deepseek-coder:33b"
+  }
+}

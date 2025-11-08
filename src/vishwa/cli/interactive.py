@@ -104,6 +104,7 @@ class InteractiveSession:
             'files': 'Show files in context',
             'model': 'Switch LLM model',
             'models': 'List available models',
+            'ollama': 'Manage Ollama models',
         }
         command_completer = CommandCompleter(command_descriptions)
 
@@ -351,6 +352,7 @@ class InteractiveSession:
             'files': self._cmd_files,
             'model': self._cmd_model,
             'models': self._cmd_models,
+            'ollama': self._cmd_ollama,
         }
 
     # Command handlers
@@ -371,6 +373,7 @@ class InteractiveSession:
         table.add_row("/files", "Show files in context")
         table.add_row("/model <name>", "Switch LLM model")
         table.add_row("/models", "List available models")
+        table.add_row("/ollama [list|pull <model>]", "Manage Ollama models")
 
         self.console.print(table)
         self.console.print()
@@ -417,26 +420,163 @@ class InteractiveSession:
     def _cmd_model(self, args: List[str]):
         """Switch LLM model."""
         if not args:
-            current = getattr(self.config, 'model', 'default')
+            current_model = self.agent.llm.model_name
+            current_provider = self.agent.llm.provider_name
             self.console.print()
-            self.console.print(f"Current model: [cyan]{current}[/cyan]")
+            self.console.print(f"Current model: [cyan]{current_model}[/cyan] ([dim]{current_provider}[/dim])")
             self.console.print("[dim]Usage: /model <name>[/dim]")
             self.console.print()
             return
 
         model_name = args[0]
-        self.console.print()
-        self.console.print(f"[green]✓ Switched to [cyan]{model_name}[/cyan][/green]")
-        self.console.print()
 
-        # TODO: Actually switch the model
-        # self.config.model = model_name
+        try:
+            # Import LLMFactory
+            from vishwa.llm import LLMFactory
+
+            # Create new LLM instance
+            new_llm = LLMFactory.create(model_name)
+
+            # Update agent's LLM
+            self.agent.llm = new_llm
+
+            # Update config
+            self.config.model = model_name
+
+            self.console.print()
+            self.console.print(f"[green]✓ Switched to [cyan]{new_llm.model_name}[/cyan] ([dim]{new_llm.provider_name}[/dim])[/green]")
+            self.console.print()
+
+        except Exception as e:
+            self.console.print()
+            self.console.print(f"[red]✗ Failed to switch model: {e}[/red]")
+            self.console.print("[dim]Use /models to see available models[/dim]")
+            self.console.print()
 
     def _cmd_models(self, args: List[str]):
         """List available models."""
+        from vishwa.llm.config import LLMConfig
+        from vishwa.llm.ollama_provider import OllamaProvider
+
         self.console.print()
-        self.console.print("[cyan]Available models:[/cyan]")
-        self.console.print("  claude-sonnet-4")
-        self.console.print("  gpt-4o")
-        self.console.print("  local (Ollama)")
+
+        # Create table
+        table = Table(show_header=True, header_style="cyan", border_style="cyan")
+        table.add_column("Provider", style="cyan")
+        table.add_column("Models")
+
+        # Get models by provider
+        models_by_provider = LLMConfig.list_available_models()
+
+        # Anthropic models
+        anthropic_models = sorted(set(models_by_provider.get("anthropic", [])))
+        if anthropic_models:
+            table.add_row("Anthropic", "\n".join(anthropic_models))
+
+        # OpenAI models
+        openai_models = sorted(set(models_by_provider.get("openai", [])))
+        if openai_models:
+            table.add_row("OpenAI", "\n".join(openai_models))
+
+        # Ollama models - check if running and list actual available models
+        ollama_models = []
+        if OllamaProvider.is_ollama_running():
+            try:
+                available = OllamaProvider.list_available_models()
+                if available:
+                    ollama_models = sorted(available)
+                    table.add_row("Ollama (local)", "\n".join(ollama_models))
+                else:
+                    table.add_row("Ollama (local)", "[dim]No models installed[/dim]\n[dim]Use /ollama pull <model>[/dim]")
+            except:
+                table.add_row("Ollama (local)", "[dim]Error listing models[/dim]")
+        else:
+            table.add_row("Ollama (local)", "[red]Not running[/red]")
+
+        self.console.print(table)
         self.console.print()
+        self.console.print("[dim]Aliases: claude → claude-sonnet-4-5, openai → gpt-4o, local → deepseek-coder:33b[/dim]")
+        self.console.print()
+
+    def _cmd_ollama(self, args: List[str]):
+        """Manage Ollama models."""
+        from vishwa.llm.ollama_provider import OllamaProvider
+        import subprocess
+
+        if not args or args[0] == "list":
+            # List available Ollama models
+            self.console.print()
+
+            if not OllamaProvider.is_ollama_running():
+                self.console.print("[red]✗ Ollama is not running[/red]")
+                self.console.print("[dim]Install from: https://ollama.com/download[/dim]")
+                self.console.print()
+                return
+
+            try:
+                models = OllamaProvider.list_available_models()
+                if models:
+                    self.console.print("[cyan]Installed Ollama models:[/cyan]")
+                    for model in sorted(models):
+                        self.console.print(f"  • {model}")
+                else:
+                    self.console.print("[dim]No models installed[/dim]")
+                    self.console.print("[dim]Pull a model: /ollama pull deepseek-coder:33b[/dim]")
+            except Exception as e:
+                self.console.print(f"[red]✗ Error listing models: {e}[/red]")
+
+            self.console.print()
+
+        elif args[0] == "pull":
+            # Pull a new Ollama model
+            if len(args) < 2:
+                self.console.print()
+                self.console.print("[red]✗ Model name required[/red]")
+                self.console.print("[dim]Usage: /ollama pull <model>[/dim]")
+                self.console.print("[dim]Example: /ollama pull deepseek-coder:33b[/dim]")
+                self.console.print()
+                return
+
+            model_name = args[1]
+
+            if not OllamaProvider.is_ollama_running():
+                self.console.print()
+                self.console.print("[red]✗ Ollama is not running[/red]")
+                self.console.print("[dim]Install from: https://ollama.com/download[/dim]")
+                self.console.print()
+                return
+
+            self.console.print()
+            self.console.print(f"[cyan]Pulling {model_name}...[/cyan]")
+            self.console.print("[dim]This may take a few minutes for large models[/dim]")
+            self.console.print()
+
+            try:
+                # Run ollama pull command
+                result = subprocess.run(
+                    ["ollama", "pull", model_name],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+
+                self.console.print(f"[green]✓ Successfully pulled {model_name}[/green]")
+                self.console.print(f"[dim]Use it with: /model {model_name}[/dim]")
+                self.console.print()
+
+            except subprocess.CalledProcessError as e:
+                self.console.print(f"[red]✗ Failed to pull model: {e.stderr}[/red]")
+                self.console.print()
+            except FileNotFoundError:
+                self.console.print("[red]✗ 'ollama' command not found[/red]")
+                self.console.print("[dim]Make sure Ollama is installed and in PATH[/dim]")
+                self.console.print()
+            except Exception as e:
+                self.console.print(f"[red]✗ Error: {e}[/red]")
+                self.console.print()
+
+        else:
+            self.console.print()
+            self.console.print(f"[red]✗ Unknown ollama subcommand: {args[0]}[/red]")
+            self.console.print("[dim]Usage: /ollama [list|pull <model>][/dim]")
+            self.console.print()

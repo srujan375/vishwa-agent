@@ -2,55 +2,106 @@
 LLM configuration and model registry.
 
 Defines available models and their mappings.
+Loads from models.json for easy configuration.
 """
 
-from typing import Dict, List
+import json
+import os
+from pathlib import Path
+from typing import Dict, List, Optional
 
 
 class LLMConfig:
     """
     Central configuration for LLM models.
 
-    Defines model names, aliases, and fallback chains.
+    Loads configuration from models.json in project root.
+    Falls back to hardcoded defaults if file not found.
     """
 
-    # Model registry with full model names
-    MODELS: Dict[str, str] = {
-        # Claude models (Anthropic) - Latest as of 2025
-        "claude-sonnet-4.5": "claude-sonnet-4-5",
-        "claude-sonnet-4-5": "claude-sonnet-4-5",
-        "claude-sonnet-4": "claude-sonnet-4",
-        "claude-opus-4": "claude-opus-4",
-        "claude-haiku-4": "claude-haiku-4",
-        "claude-haiku-4-5": "claude-haiku-4-5",
-        "claude-haiku-4-5": "claude-haiku-4-5",
-        # Aliases
-        "claude": "claude-sonnet-4-5",  # Default to latest
-        "sonnet": "claude-sonnet-4-5",
-        "opus": "claude-opus-4-1",
-        "haiku": "claude-haiku-4-5",
-        # OpenAI models
-        "gpt-4o": "gpt-4o",
-        "gpt-4-turbo": "gpt-4-turbo-2024-04-09",
-        "gpt-4": "gpt-4",
-        "o1": "o1",
-        "o1-mini": "o1-mini",
-        # Aliases
-        "openai": "gpt-4o",
-        # Ollama models (local)
-        "llama3.1": "llama3.1",
-        "llama3.1:8b": "llama3.1:8b",
-        "llama3.1:70b": "llama3.1:70b",
-        "codestral": "codestral:22b",
-        "codestral:22b": "codestral:22b",
-        "deepseek-coder": "deepseek-coder:33b",
-        "deepseek-coder:33b": "deepseek-coder:33b",
-        "qwen2.5-coder": "qwen2.5-coder:32b",
-        "qwen2.5-coder:32b": "qwen2.5-coder:32b",
-        # Aliases
-        "local": "deepseek-coder:33b",
-        "ollama": "deepseek-coder:33b",
-    }
+    # Cache for loaded config
+    _config_cache: Optional[Dict] = None
+
+    @classmethod
+    def _load_config(cls) -> Dict:
+        """Load models configuration from JSON file."""
+        if cls._config_cache is not None:
+            return cls._config_cache
+
+        # Try to find models.json in project root
+        config_paths = [
+            Path.cwd() / "models.json",  # Current directory
+            Path(__file__).parent.parent.parent.parent / "models.json",  # Project root
+            Path.home() / ".vishwa" / "models.json",  # User home
+        ]
+
+        for config_path in config_paths:
+            if config_path.exists():
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        cls._config_cache = json.load(f)
+                        return cls._config_cache
+                except Exception:
+                    continue
+
+        # Fallback to default config
+        cls._config_cache = cls._get_default_config()
+        return cls._config_cache
+
+    @classmethod
+    def _get_default_config(cls) -> Dict:
+        """Get default configuration if models.json not found."""
+        return {
+            "default_model": "claude-sonnet-4-5",
+            "providers": {
+                "anthropic": {
+                    "models": {
+                        "claude-sonnet-4-5": {"name": "claude-sonnet-4-5", "description": "Claude Sonnet 4.5"},
+                        "claude-opus-4": {"name": "claude-opus-4", "description": "Claude Opus 4"},
+                        "claude-haiku-4-5": {"name": "claude-haiku-4-5", "description": "Claude Haiku 4.5"},
+                    }
+                },
+                "openai": {
+                    "models": {
+                        "gpt-4o": {"name": "gpt-4o", "description": "GPT-4 Omni"},
+                        "gpt-4": {"name": "gpt-4", "description": "GPT-4"},
+                    }
+                },
+                "ollama": {
+                    "models": {
+                        "deepseek-coder:33b": {"name": "deepseek-coder:33b", "description": "DeepSeek Coder 33B"},
+                    }
+                }
+            },
+            "aliases": {
+                "claude": "claude-sonnet-4-5",
+                "openai": "gpt-4o",
+                "local": "deepseek-coder:33b",
+            }
+        }
+
+    @classmethod
+    def _get_models_dict(cls) -> Dict[str, str]:
+        """Build MODELS dict from config."""
+        config = cls._load_config()
+        models: Dict[str, str] = {}
+
+        # Add all models from all providers
+        for provider, provider_data in config.get("providers", {}).items():
+            for model_key, model_data in provider_data.get("models", {}).items():
+                models[model_key] = model_data["name"]
+
+        # Add aliases
+        for alias, target in config.get("aliases", {}).items():
+            models[alias] = target
+
+        return models
+
+    # Backward compatibility - make MODELS accessible as class variable
+    @classmethod
+    def _get_models(cls) -> Dict[str, str]:
+        """Get models dict - backward compatible."""
+        return cls._get_models_dict()
 
     # Provider detection patterns
     PROVIDER_PATTERNS: Dict[str, str] = {
@@ -59,53 +110,48 @@ class LLMConfig:
         "o1": "openai",
     }
 
-    # Default fallback chains
+    # Default fallback chains (deprecated but kept for compatibility)
     FALLBACK_CHAINS: Dict[str, List[str]] = {
-        "quality": [
-            "claude-sonnet-4-5",
-            "gpt-4o",
-            "deepseek-coder:33b",
-        ],
-        "cost": [
-            "deepseek-coder:33b",
-            "claude-haiku-4-5",
-            "gpt-4o",
-        ],
-        "privacy": [
-            "deepseek-coder:33b",
-            "qwen2.5-coder:32b",
-            "codestral:22b",
-        ],
-        "default": [
-            "claude-sonnet-4-5",
-            "gpt-4o",
-            "deepseek-coder:33b",
-        ],
+        "quality": ["claude-sonnet-4-5", "gpt-4o", "deepseek-coder:33b"],
+        "cost": ["deepseek-coder:33b", "claude-haiku-4-5", "gpt-4o"],
+        "privacy": ["deepseek-coder:33b", "qwen2.5-coder:32b", "codestral:22b"],
+        "default": ["claude-sonnet-4-5", "gpt-4o", "deepseek-coder:33b"],
     }
 
-    # Default model
-    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    @classmethod
+    def get_default_model(cls) -> str:
+        """Get default model from config or fallback."""
+        config = cls._load_config()
+        return config.get("default_model", "claude-sonnet-4-5")
 
-    # Default fallback chain name
-    DEFAULT_FALLBACK_CHAIN = "default"
+    # Backward compatibility
+    DEFAULT_MODEL = None  # Will be set dynamically
 
     @classmethod
-    def resolve_model_name(cls, model_alias: str) -> str:
+    def resolve_model_name(cls, model_alias: Optional[str] = None) -> str:
         """
         Resolve model alias to full model name.
 
         Args:
-            model_alias: Model name or alias
+            model_alias: Model name or alias (None = use default from config or .env)
 
         Returns:
             Full model name
 
         Examples:
-            "claude" -> "claude-sonnet-4-20250514"
+            "claude" -> "claude-sonnet-4-5"
             "gpt-4o" -> "gpt-4o"
             "local" -> "deepseek-coder:33b"
+            None -> checks .env MODEL, then config default
         """
-        return cls.MODELS.get(model_alias, model_alias)
+        # If no alias provided, check .env then config
+        if model_alias is None:
+            model_alias = os.getenv("MODEL") or os.getenv("VISHWA_MODEL")
+            if model_alias is None:
+                model_alias = cls.get_default_model()
+
+        models = cls._get_models_dict()
+        return models.get(model_alias, model_alias)
 
     @classmethod
     def detect_provider(cls, model_name: str) -> str:

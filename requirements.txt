@@ -33,3 +33,4 @@ ruff
 # Type Checking
 mypy
 types-requests
+tiktoken

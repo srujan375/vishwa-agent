@@ -38,11 +38,6 @@ from vishwa.utils.logger import logger
     help="Auto-approve all actions (use with caution!)",
 )
 @click.option(
-    "--fallback",
-    default=None,
-    help="Fallback chain: 'quality', 'cost', 'privacy', or 'default'",
-)
-@click.option(
     "--verbose/--quiet",
     default=True,
     help="Show detailed output",
@@ -76,7 +71,6 @@ def main(
     model: str,
     max_iter: int,
     auto_approve: bool,
-    fallback: str,
     verbose: bool,
     log_level: str,
     log_dir: str,
@@ -94,7 +88,7 @@ def main(
 
     Examples:
         vishwa "search for TODO comments" --model local
-        vishwa "refactor the database code" --fallback quality
+        vishwa "refactor the database code" --model gpt-4o
     """
     # Load environment variables
     load_dotenv()
@@ -121,7 +115,6 @@ def main(
                 model=model,
                 max_iter=max_iter,
                 auto_approve=auto_approve,
-                fallback=fallback,
                 verbose=verbose,
             )
             sys.exit(0)
@@ -132,22 +125,10 @@ def main(
         ui.show_welcome()
 
     try:
-        # Create LLM
-        if fallback:
-            llm = LLMFactory.create_with_fallback(
-                primary_model=model, fallback_chain=fallback
-            )
-            if verbose:
-                ui.show_model_info(f"Fallback chain: {fallback}", "multiple")
-        elif model:
-            llm = LLMFactory.create(model)
-            if verbose:
-                ui.show_model_info(llm.model_name, llm.provider_name)
-        else:
-            # Use default with fallback
-            llm = LLMFactory.create_with_fallback()
-            if verbose:
-                ui.show_model_info("Default fallback chain", "multiple")
+        # Create LLM (use specified model or default)
+        llm = LLMFactory.create(model)
+        if verbose:
+            ui.show_model_info(llm.model_name, llm.provider_name)
 
         # Load tools
         tools = ToolRegistry.load_default()
@@ -195,7 +176,6 @@ def _run_interactive(
     model: str,
     max_iter: int,
     auto_approve: bool,
-    fallback: str,
     verbose: bool,
 ):
     """
@@ -205,7 +185,6 @@ def _run_interactive(
         model: LLM model name
         max_iter: Max iterations
         auto_approve: Auto-approve flag
-        fallback: Fallback chain
         verbose: Verbose output
     """
     from vishwa.cli.interactive import InteractiveSession
@@ -218,13 +197,10 @@ def _run_interactive(
             config.model = model
 
         # Determine which model to use
-        model_to_use = model or config.model or "claude"
+        model_to_use = model or config.model
 
-        # Load LLM
-        llm = LLMFactory.create_with_fallback(
-            primary_model=model_to_use,
-            fallback_chain=fallback or "default",
-        )
+        # Load LLM (single model, no fallback)
+        llm = LLMFactory.create(model_to_use)
 
         # Load tools
         tools = ToolRegistry.load_default()

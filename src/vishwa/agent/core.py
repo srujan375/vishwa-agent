@@ -47,7 +47,7 @@ class VishwaAgent:
         self,
         llm: BaseLLM,
         tools: Optional[ToolRegistry] = None,
-        max_iterations: int = 15,
+        max_iterations: Optional[int] = None,
         auto_approve: bool = False,
         verbose: bool = True,
     ):
@@ -57,7 +57,7 @@ class VishwaAgent:
         Args:
             llm: LLM provider instance
             tools: Tool registry (default: load all core tools)
-            max_iterations: Maximum agent loop iterations
+            max_iterations: Maximum agent loop iterations (None = unlimited)
             auto_approve: Auto-approve all actions (dangerous!)
             verbose: Print progress to console
         """
@@ -66,6 +66,11 @@ class VishwaAgent:
         self.max_iterations = max_iterations
         self.auto_approve = auto_approve
         self.verbose = verbose
+
+        # Register Task tool (needs LLM and registry, so added after registry creation)
+        if not self.tools.get("task"):
+            from vishwa.tools.task import TaskTool
+            self.tools.register(TaskTool(llm=self.llm, tool_registry=self.tools))
 
         # State
         self.context = ContextManager()
@@ -99,7 +104,19 @@ class VishwaAgent:
         self.context.add_message("user", task)
 
         # Main ReAct loop
-        for self.iteration in range(1, self.max_iterations + 1):
+        self.iteration = 0
+        while True:
+            self.iteration += 1
+
+            # Check max iterations if set
+            if self.max_iterations and self.iteration > self.max_iterations:
+                # Max iterations reached
+                self.stop_reason = "max_iterations"
+                logger.agent_decision("stop", "max iterations reached")
+                return self._finalize_incomplete(
+                    f"Max iterations ({self.max_iterations}) reached"
+                )
+
             try:
                 # Log iteration start
                 logger.agent_iteration(self.iteration, self.max_iterations)
@@ -219,13 +236,6 @@ class VishwaAgent:
                 logger.error("agent", f"Unexpected error: {str(e)}", exception=e)
                 return self._finalize_error(f"Unexpected error: {str(e)}")
 
-        # Max iterations reached
-        self.stop_reason = "max_iterations"
-        logger.agent_decision("stop", "max iterations reached")
-        return self._finalize_incomplete(
-            f"Max iterations ({self.max_iterations}) reached"
-        )
-
     def _get_llm_response(self) -> LLMResponse:
         """
         Get response from LLM.
@@ -287,7 +297,7 @@ class VishwaAgent:
             files_in_context=files if files else "None",
             modifications_count=mods,
             current_iteration=self.iteration,
-            max_iterations=self.max_iterations,
+            max_iterations=self.max_iterations or "unlimited",
             task=self.task,
             platform_commands=get_platform_commands(),
         )

@@ -345,6 +345,7 @@ class ToolRegistry:
         from vishwa.tools.search import GlobTool, GrepTool
         from vishwa.tools.web import WebFetchTool, WebSearchTool
         from vishwa.tools.todo import TodoWriteTool
+        from vishwa.tools.analyze import AnalyzeStructureTool, AnalyzeDependenciesTool, ReadSymbolTool
 
         registry = cls()
 
@@ -357,6 +358,11 @@ class ToolRegistry:
         registry.register(WebFetchTool())
         registry.register(WebSearchTool())
         registry.register(TodoWriteTool())
+
+        # Code intelligence tools (new!)
+        registry.register(AnalyzeStructureTool())
+        registry.register(AnalyzeDependenciesTool())
+        registry.register(ReadSymbolTool())
 
         # Tools that support approval (ApprovableTool subclasses)
         registry.register(StrReplaceTool(auto_approve=auto_approve))

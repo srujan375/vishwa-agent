@@ -4,13 +4,17 @@ LLM Factory for creating provider instances.
 Handles provider selection, instantiation, and fallback logic.
 """
 
-from typing import Optional
+import os
+from typing import TYPE_CHECKING, Optional
 
 from vishwa.llm.anthropic_provider import AnthropicProvider
 from vishwa.llm.base import BaseLLM, LLMAuthenticationError
 from vishwa.llm.config import LLMConfig
 from vishwa.llm.ollama_provider import OllamaProvider
 from vishwa.llm.openai_provider import OpenAIProvider
+
+if TYPE_CHECKING:
+    from vishwa.llm.fallback import FallbackLLM
 
 
 class LLMFactory:
@@ -62,6 +66,45 @@ class LLMFactory:
             return OpenAIProvider(model=full_model_name, **kwargs)
 
         elif provider_name == "ollama":
+            # Check if Ollama model is available, offer to pull if not
+            if not OllamaProvider.is_ollama_running():
+                raise LLMAuthenticationError(
+                    "Ollama is not running. Install from https://ollama.com/download"
+                )
+
+            if not OllamaProvider.is_model_available(full_model_name):
+                # Model not available - offer to pull it
+                print(f"\nOllama model '{full_model_name}' not found locally.")
+
+                # Auto-pull if environment variable is set
+                auto_pull = os.getenv("VISHWA_AUTO_PULL_OLLAMA", "").lower() in ("true", "1", "yes")
+
+                if auto_pull:
+                    print("Auto-pulling model (VISHWA_AUTO_PULL_OLLAMA=true)...")
+                    if not OllamaProvider.pull_model(full_model_name, show_progress=True):
+                        raise LLMAuthenticationError(
+                            f"Failed to pull Ollama model: {full_model_name}"
+                        )
+                else:
+                    # Ask user
+                    try:
+                        response = input(f"Pull '{full_model_name}' now? [Y/n]: ").strip().lower()
+                        if response in ("", "y", "yes"):
+                            if not OllamaProvider.pull_model(full_model_name, show_progress=True):
+                                raise LLMAuthenticationError(
+                                    f"Failed to pull Ollama model: {full_model_name}"
+                                )
+                        else:
+                            raise LLMAuthenticationError(
+                                f"Ollama model '{full_model_name}' not available. "
+                                f"Pull it with: ollama pull {full_model_name}"
+                            )
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nCancelled.")
+                        raise LLMAuthenticationError(
+                            f"Ollama model '{full_model_name}' not available"
+                        )
+
             return OllamaProvider(model=full_model_name, **kwargs)
 
         else:
@@ -74,7 +117,10 @@ class LLMFactory:
         **kwargs,
     ) -> "FallbackLLM":
         """
-        Create an LLM with automatic fallback support.
+        DEPRECATED: Create an LLM with automatic fallback support.
+
+        This method is deprecated. Use LLMFactory.create() instead.
+        Fallback logic has been removed from Vishwa.
 
         Args:
             primary_model: Primary model to try first
@@ -88,6 +134,13 @@ class LLMFactory:
             >>> llm = LLMFactory.create_with_fallback()  # Use default chain
             >>> llm = LLMFactory.create_with_fallback(fallback_chain="cost")
         """
+        import warnings
+        warnings.warn(
+            "create_with_fallback is deprecated. Use LLMFactory.create() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         from vishwa.llm.fallback import FallbackLLM
 
         # Get fallback chain

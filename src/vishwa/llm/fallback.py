@@ -1,6 +1,9 @@
 """
 Fallback LLM with automatic retry logic.
 
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Vishwa now uses single LLM instances without automatic fallback.
+
 Tries multiple models in sequence if one fails.
 """
 
@@ -13,7 +16,10 @@ from vishwa.llm.response import LLMResponse
 
 class FallbackLLM(BaseLLM):
     """
-    LLM with automatic fallback support.
+    DEPRECATED: LLM with automatic fallback support.
+
+    This class is deprecated and will be removed in a future version.
+    Use LLMFactory.create() instead for single model instances.
 
     Tries models in sequence:
     1. Try primary model
