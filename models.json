@@ -23,25 +23,17 @@
     },
     "openai": {
       "models": {
-        "gpt-4o": {
-          "name": "gpt-4o",
-          "description": "GPT-4 Omni - Latest and most capable"
+        "gpt-5-pro-2025-10-06": {
+          "name": "gpt-5-pro-2025-10-06",
+          "description": "gpt-5-pro - Latest and most capable"
         },
-        "gpt-4-turbo": {
-          "name": "gpt-4-turbo-2024-04-09",
-          "description": "GPT-4 Turbo - Fast and capable"
+        "gpt-5-2025-08-07": {
+          "name": "gpt-5-2025-08-07",
+          "description": "GPT-5 - Fast and capable"
         },
-        "gpt-4": {
-          "name": "gpt-4",
-          "description": "GPT-4 - Original model"
-        },
-        "o1": {
-          "name": "o1",
-          "description": "o1 - Advanced reasoning model"
-        },
-        "o1-mini": {
-          "name": "o1-mini",
-          "description": "o1-mini - Faster reasoning model"
+        "gpt-4.1-2025-04-14": {
+          "name": "gpt-4.1-2025-04-14",
+          "description": "gpt-4.1 - Fast but less advanced"
         }
       }
     },
