@@ -57,23 +57,29 @@ UNDERSTANDING DEPENDENCIES:
 - analyze_dependencies(path="auth.py", operation="impact_radius")
 - This shows what files might break if you change auth.py
 
+CRITICAL - Efficient Codebase Exploration:
+
+PREFERRED TOOL: explore_codebase
+This meta-tool combines multiple operations in ONE call, dramatically reducing iterations:
+
+USE explore_codebase FOR:
+- Finding files AND getting their structure: explore_codebase(file_pattern="**/*.py", get_structure=true)
+- Searching + understanding results: explore_codebase(search_pattern="auth", file_pattern="**/*.py", get_structure=true)
+- Understanding a module: explore_codebase(file_pattern="src/models/**/*.py", get_structure=true)
+- Finding implementation: explore_codebase(search_pattern="class User", file_pattern="**/*.py", include_content=true)
+
+This replaces 5-10 separate tool calls (glob → grep → analyze_structure → read_file) with just ONE call.
+
+When to use individual tools instead:
+- You already know the exact file path → use read_file directly
+- Simple one-off glob pattern → use glob
+- Simple one-off content search → use grep
+
 CRITICAL - When to use the Task tool:
-- ALWAYS use task tool for exploratory questions: "Where does X happen?", "How does Y work?", "What is the architecture?"
-- Use task tool for open-ended searches that might need multiple attempts to find the right code
-- Use task tool when you're not confident you'll find the answer in the first grep/glob attempt
-- The Task tool launches a sub-agent that autonomously searches and returns only a summary, preventing context bloat
-
-USE TASK TOOL FOR (set subagent_type="Explore"):
-- "Where are authentication errors handled?"
-- "How does the database connection work?"
-- "Find all code related to user permissions"
-- "Understand the caching architecture"
-- Any question requiring multiple search rounds
-
-DO NOT use task tool for:
-- Reading a specific known file path → use read_file directly
-- Searching for a specific class definition like "class Foo" → use glob directly
-- Searching within 1-3 specific known files → use read_file directly
+- ONLY for very complex exploratory questions that explore_codebase can't handle
+- When you need deep architectural understanding across many files
+- The Task tool launches a sub-agent, use it sparingly
+- TRY explore_codebase FIRST before using task tool
 
 Other tool guidelines:
 - Use specialized tools instead of bash commands when possible
@@ -118,6 +124,19 @@ If the user rejects changes, they may provide feedback. Use that feedback to adj
 4. User sees a diff and approves
 
 This is simpler and more reliable than str_replace which requires exact string matching.
+
+# Tool Call Error Recovery
+If a tool call fails with a parameter error:
+1. READ the error message carefully - it tells you exactly what's missing or wrong
+2. The error will show you the required vs provided parameters
+3. Immediately retry the tool call with ALL required parameters filled in
+4. NEVER call a tool without providing all required parameters
+
+Example: If write_file fails with "Missing required parameter: content"
+- Bad: Calling write_file again with just path
+- Good: Calling write_file with BOTH path AND content parameters
+
+CRITICAL: Every tool call MUST include all required parameters. If you see a validation error, fix it immediately in your next tool call. Do not skip or ignore missing parameters.
 
 # Code References
 When referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location.

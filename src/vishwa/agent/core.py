@@ -368,6 +368,35 @@ class VishwaAgent:
                     suggestion="The file already exists. Use str_replace to modify it, or use a different filename.",
                 )
 
+        # Validate required parameters BEFORE execution
+        # This catches missing parameters early with helpful error messages
+        try:
+            tool.validate_params(**arguments)
+        except ValueError as e:
+            # Parameter validation failed - provide helpful error to LLM
+            error_msg = str(e)
+
+            # Get the tool's parameter schema to help LLM fix the issue
+            required_params = tool.parameters.get("required", [])
+            provided_params = list(arguments.keys())
+            missing_params = [p for p in required_params if p not in provided_params]
+
+            helpful_error = f"{error_msg}\n\n"
+            helpful_error += f"Required parameters for {tool_name}: {required_params}\n"
+            helpful_error += f"Provided parameters: {provided_params}\n"
+
+            if missing_params:
+                helpful_error += f"\nMissing: {missing_params}\n"
+                helpful_error += f"\nPlease call {tool_name} again with ALL required parameters."
+
+            result = ToolResult(
+                success=False,
+                error=helpful_error,
+                suggestion=f"Retry {tool_name} with all required parameters: {required_params}"
+            )
+            logger.tool_result(tool_name, False, None, result.error)
+            return result
+
         # Execute tool
         try:
             result = tool.execute(**arguments)
