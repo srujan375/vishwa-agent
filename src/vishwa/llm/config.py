@@ -70,6 +70,7 @@ class LLMConfig:
                 "ollama": {
                     "models": {
                         "deepseek-coder:33b": {"name": "deepseek-coder:33b", "description": "DeepSeek Coder 33B"},
+                        "gemma3:4b": {"name": "gemma3:4b", "description": "Google Gemma 3 4B"},
                     }
                 }
             },
@@ -183,6 +184,7 @@ class LLMConfig:
             "deepseek-coder",
             "qwen2.5-coder",
             "mistral-nemo",
+            "gemma3",
         ]:
             return "ollama"
 

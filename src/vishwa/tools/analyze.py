@@ -87,29 +87,34 @@ Use this to understand file structure before deciding what to read.
             structure = get_structure(path)
 
             # Format output
+            # Ensure all fields are lists
+            imports_list = list(structure.imports) if structure.imports else []
+            classes_list = list(structure.classes) if structure.classes else []
+            functions_list = list(structure.functions) if structure.functions else []
+
             output = f"""File: {Path(path).name} ({structure.total_lines} lines, {structure.language})
 
-Imports ({len(structure.imports)}):
+Imports ({len(imports_list)}):
 """
-            for imp in structure.imports[:20]:  # Limit to 20
+            for imp in imports_list[:20]:  # Limit to 20
                 output += f"  - {imp}\n"
 
-            if len(structure.imports) > 20:
-                output += f"  ... and {len(structure.imports) - 20} more\n"
+            if len(imports_list) > 20:
+                output += f"  ... and {len(imports_list) - 20} more\n"
 
-            output += f"\nClasses ({len(structure.classes)}):\n"
-            for name, line in structure.classes[:20]:
+            output += f"\nClasses ({len(classes_list)}):\n"
+            for name, line in classes_list[:20]:
                 output += f"  - {name} (line {line})\n"
 
-            if len(structure.classes) > 20:
-                output += f"  ... and {len(structure.classes) - 20} more\n"
+            if len(classes_list) > 20:
+                output += f"  ... and {len(classes_list) - 20} more\n"
 
-            output += f"\nFunctions ({len(structure.functions)}):\n"
-            for name, line in structure.functions[:20]:
+            output += f"\nFunctions ({len(functions_list)}):\n"
+            for name, line in functions_list[:20]:
                 output += f"  - {name} (line {line})\n"
 
-            if len(structure.functions) > 20:
-                output += f"  ... and {len(structure.functions) - 20} more\n"
+            if len(functions_list) > 20:
+                output += f"  ... and {len(functions_list) - 20} more\n"
 
             return ToolResult(
                 success=True,

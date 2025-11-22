@@ -201,21 +201,41 @@ Returns comprehensive exploration results in ONE tool call instead of 5-10.
                         output_sections.append(f"\n{rel_path} ({structure.total_lines} lines):")
 
                         # Show key imports
-                        if structure.imports[:3]:
-                            output_sections.append("  Imports: " + ", ".join(structure.imports[:3]))
+                        if structure.imports and len(structure.imports) > 0:
+                            # Ensure imports is a list before slicing
+                            imports_as_list = list(structure.imports) if not isinstance(structure.imports, list) else structure.imports
+                            imports_list = imports_as_list[:3]
+                            if imports_list:
+                                output_sections.append("  Imports: " + ", ".join(imports_list))
 
                         # Show classes
-                        if structure.classes:
-                            class_names = [name for name, _ in structure.classes[:5]]
-                            output_sections.append(f"  Classes: {', '.join(class_names)}")
+                        if structure.classes and len(structure.classes) > 0:
+                            # Ensure classes is a list before slicing
+                            classes_as_list = list(structure.classes) if not isinstance(structure.classes, list) else structure.classes
+                            classes_list = classes_as_list[:5]
+                            class_names = [name for name, _ in classes_list]
+                            if class_names:
+                                output_sections.append(f"  Classes: {', '.join(class_names)}")
 
                         # Show functions
-                        if structure.functions:
-                            func_names = [name for name, _ in structure.functions[:5]]
-                            output_sections.append(f"  Functions: {', '.join(func_names)}")
+                        if structure.functions and len(structure.functions) > 0:
+                            # Ensure functions is a list before slicing
+                            functions_as_list = list(structure.functions) if not isinstance(structure.functions, list) else structure.functions
+                            functions_list = functions_as_list[:5]
+                            func_names = [name for name, _ in functions_list]
+                            if func_names:
+                                output_sections.append(f"  Functions: {', '.join(func_names)}")
 
                     except Exception as e:
-                        output_sections.append(f"\n{file_path}: Could not analyze structure - {str(e)}")
+                        import traceback
+                        # Log the full traceback for debugging
+                        tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                        error_msg = f"\n{file_path}: Could not analyze structure - {str(e)}\n"
+                        error_msg += f"Structure types: imports={type(structure.imports)}, "
+                        error_msg += f"classes={type(structure.classes)}, "
+                        error_msg += f"functions={type(structure.functions)}\n"
+                        error_msg += f"Traceback:\n{tb_str}"
+                        output_sections.append(error_msg)
 
             # Build final output
             output = "\n".join(output_sections)

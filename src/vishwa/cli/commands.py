@@ -64,6 +64,12 @@ from vishwa.utils.logger import logger
     is_flag=True,
     help="Disable file logging",
 )
+@click.option(
+    "--loop-threshold",
+    default=15,
+    help="Number of repeated tool calls before detecting loop (default: 15)",
+    type=int,
+)
 @click.pass_context
 def main(
     ctx,
@@ -76,6 +82,7 @@ def main(
     log_dir: str,
     log_json: bool,
     no_log: bool,
+    loop_threshold: int,
 ):
     """
     Vishwa - Terminal-based Agentic Coding Assistant
@@ -116,6 +123,7 @@ def main(
                 max_iter=max_iter,
                 auto_approve=auto_approve,
                 verbose=verbose,
+                loop_threshold=loop_threshold,
             )
             sys.exit(0)
         return
@@ -140,6 +148,7 @@ def main(
             max_iterations=max_iter,
             auto_approve=auto_approve,
             verbose=verbose,
+            loop_detection_threshold=loop_threshold,
         )
 
         # Show task
@@ -177,6 +186,7 @@ def _run_interactive(
     max_iter: int,
     auto_approve: bool,
     verbose: bool,
+    loop_threshold: int = 15,
 ):
     """
     Run Vishwa in interactive REPL mode.
@@ -186,6 +196,7 @@ def _run_interactive(
         max_iter: Max iterations
         auto_approve: Auto-approve flag
         verbose: Verbose output
+        loop_threshold: Loop detection threshold
     """
     from vishwa.cli.interactive import InteractiveSession
     from vishwa.config import Config
@@ -215,6 +226,7 @@ def _run_interactive(
             max_iterations=max_iter,
             auto_approve=auto_approve,
             verbose=True,  # Show tool execution and progress
+            loop_detection_threshold=loop_threshold,
         )
 
         # Start interactive session

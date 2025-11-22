@@ -38,6 +38,7 @@ class OllamaProvider(BaseLLM):
         "qwen2.5-coder": 32768,
         "qwen2.5-coder:32b": 32768,
         "mistral-nemo": 128000,
+        "gemma3:4b": 8192,
     }
 
     def __init__(

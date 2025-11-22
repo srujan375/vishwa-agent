@@ -140,11 +140,20 @@ class OpenAIProvider(BaseLLM):
             # Add max_output_tokens (Responses API uses this instead of max_tokens)
             api_params["max_output_tokens"] = kwargs.get("max_output_tokens", self.max_tokens)
 
-            # Add temperature
-            if "temperature" in kwargs:
-                api_params["temperature"] = kwargs["temperature"]
-            elif self.temperature:
-                api_params["temperature"] = self.temperature
+            # Add temperature - only supported for GPT-5.1 with reasoning effort "none"
+            # GPT-5, GPT-5-mini, GPT-5-nano do NOT support temperature at all
+            supports_temperature = False
+            if self.model.startswith("gpt-5.1"):
+                # GPT-5.1 supports temperature only with reasoning effort "none"
+                reasoning_effort = kwargs.get("reasoning", {}).get("effort", "none") if isinstance(kwargs.get("reasoning"), dict) else "none"
+                if reasoning_effort == "none":
+                    supports_temperature = True
+
+            if supports_temperature:
+                if "temperature" in kwargs:
+                    api_params["temperature"] = kwargs["temperature"]
+                elif self.temperature:
+                    api_params["temperature"] = self.temperature
 
             # Add tools if provided (convert from Chat Completions format to Responses API format)
             if tools:
@@ -231,37 +240,42 @@ class OpenAIProvider(BaseLLM):
             LLMResponse with unified format
         """
         from vishwa.llm.response import ToolCall, Usage
+        import json
 
-        # Extract text content from output
-        content_text = None
+        # Use the convenient output_text property for simple text responses
+        content_text = getattr(response, "output_text", None)
+
+        # Extract tool calls from output
         tool_calls = []
-
         if hasattr(response, "output") and response.output:
-            for item in response.output:
-                if hasattr(item, "content") and item.content:
-                    for content_block in item.content:
-                        if hasattr(content_block, "type"):
-                            if content_block.type == "output_text":
+            for output_item in response.output:
+                # Check if this is a function call
+                if hasattr(output_item, "type") and output_item.type == "function_call":
+                    tool_calls.append(
+                        ToolCall(
+                            id=getattr(output_item, "call_id", ""),
+                            name=output_item.name,
+                            arguments=json.loads(output_item.arguments)
+                            if isinstance(output_item.arguments, str)
+                            else output_item.arguments,
+                        )
+                    )
+                # Also check for text content in message-type outputs if output_text wasn't set
+                elif not content_text and hasattr(output_item, "content") and output_item.content:
+                    for content_block in output_item.content:
+                        if hasattr(content_block, "text"):
+                            if content_text is None:
                                 content_text = content_block.text
-                            elif content_block.type == "function_call":
-                                # Handle tool calls
-                                import json
-                                tool_calls.append(
-                                    ToolCall(
-                                        id=getattr(content_block, "id", ""),
-                                        name=content_block.name,
-                                        arguments=json.loads(content_block.arguments)
-                                        if isinstance(content_block.arguments, str)
-                                        else content_block.arguments,
-                                    )
-                                )
+                            else:
+                                content_text += content_block.text
 
         # Extract usage information
+        # Responses API uses: prompt_tokens, completion_tokens, total_tokens (same as Chat Completions)
         usage_obj = None
         if hasattr(response, "usage") and response.usage:
             usage_obj = Usage(
-                prompt_tokens=getattr(response.usage, "input_tokens", 0),
-                completion_tokens=getattr(response.usage, "output_tokens", 0),
+                prompt_tokens=getattr(response.usage, "prompt_tokens", 0),
+                completion_tokens=getattr(response.usage, "completion_tokens", 0),
                 total_tokens=getattr(response.usage, "total_tokens", 0),
             )
 

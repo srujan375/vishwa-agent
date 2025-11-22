@@ -120,16 +120,34 @@ This shows exact spacing including trailing spaces and tabs.
 
             # Apply line range if specified
             total_lines = len(lines)
+            range_adjusted = False
+            requested_end = None
+
             if start_line is not None or end_line is not None:
                 start = (start_line - 1) if start_line else 0
                 end = end_line if end_line else total_lines
+                requested_end = end
 
-                # Validate range
-                if start < 0 or end > total_lines or start >= end:
+                # Validate and auto-adjust range
+                if start < 0:
+                    start = 0
+                if start >= total_lines:
                     return ToolResult(
                         success=False,
-                        error=f"Invalid line range: {start_line}-{end_line} (file has {total_lines} lines)",
-                        suggestion=f"Use a valid range between 1 and {total_lines}",
+                        error=f"Invalid start line: {start_line} (file has {total_lines} lines)",
+                        suggestion=f"Start line must be between 1 and {total_lines}",
+                    )
+
+                # Auto-adjust end if it exceeds file length (be forgiving)
+                if end > total_lines:
+                    range_adjusted = True
+                    end = total_lines
+
+                if start >= end:
+                    return ToolResult(
+                        success=False,
+                        error=f"Invalid line range: start ({start_line}) must be less than end ({end_line})",
+                        suggestion=f"Use a valid range where start < end",
                     )
 
                 lines = lines[start:end]
@@ -153,6 +171,10 @@ This shows exact spacing including trailing spaces and tabs.
                     for i, line in enumerate(lines)
                 ]
                 content = "\n".join(numbered_lines)
+
+            # Add note if range was adjusted
+            if range_adjusted:
+                content = f"[Note: Requested end line {requested_end} exceeds file length. Reading until end of file (line {total_lines})]\n\n" + content
 
             return ToolResult(
                 success=True,

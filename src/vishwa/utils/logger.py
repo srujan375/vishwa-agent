@@ -217,7 +217,15 @@ class VishwaLogger:
     # === ERRORS & WARNINGS ===
 
     def error(self, component: str, message: str, exception: Optional[Exception] = None):
-        self._log('error', component.upper(), f"ERROR: {message}",
+        import traceback
+
+        error_details = message
+        if exception:
+            # Get full traceback
+            tb_str = ''.join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            error_details = f"{message}\n{tb_str}"
+
+        self._log('error', component.upper(), f"ERROR: {error_details}",
                   error=str(exception) if exception else message)
 
     def warning(self, component: str, message: str):

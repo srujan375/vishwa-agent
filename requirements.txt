@@ -19,8 +19,10 @@ pydantic
 pydantic-settings
 python-dotenv
 
-# HTTP requests (for Ollama health checks)
+# HTTP requests (for Ollama health checks and web tools)
 requests
+beautifulsoup4
+ddgs  # DuckDuckGo search (formerly duckduckgo-search)
 
 # Testing
 pytest

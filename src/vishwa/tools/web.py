@@ -239,12 +239,12 @@ For now, this returns a placeholder. Integrate with your preferred search API.
         try:
             # Try DuckDuckGo first (no API key needed)
             try:
-                from duckduckgo_search import DDGS
+                from ddgs import DDGS
             except ImportError:
                 return ToolResult(
                     success=False,
                     error="DuckDuckGo search not available",
-                    suggestion="Install with: pip install duckduckgo-search\n"
+                    suggestion="Install with: pip install ddgs\n"
                               "Or integrate with Google Custom Search API",
                 )
 

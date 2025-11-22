@@ -62,6 +62,10 @@
         "gpt-oss:20b-cloud": {
           "name": "gpt-oss:20b-cloud",
           "description": "GPT-OSS 20B Cloud - Smaller cloud model"
+        },
+        "gemma3:4b": {
+          "name": "gemma3:4b",
+          "description": "Google Gemma 3 4B - Lightweight local model"
         }
       }
     }

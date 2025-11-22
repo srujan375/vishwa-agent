@@ -50,6 +50,7 @@ class VishwaAgent:
         max_iterations: Optional[int] = None,
         auto_approve: bool = False,
         verbose: bool = True,
+        loop_detection_threshold: int = 15,
     ):
         """
         Initialize Vishwa agent.
@@ -60,12 +61,14 @@ class VishwaAgent:
             max_iterations: Maximum agent loop iterations (None = unlimited)
             auto_approve: Auto-approve all actions (dangerous!)
             verbose: Print progress to console
+            loop_detection_threshold: Number of repeated tool calls before detecting loop (default: 15)
         """
         self.llm = llm
         self.tools = tools or ToolRegistry.load_default(auto_approve=auto_approve)
         self.max_iterations = max_iterations
         self.auto_approve = auto_approve
         self.verbose = verbose
+        self.loop_detection_threshold = loop_detection_threshold
 
         # Register Task tool (needs LLM and registry, so added after registry creation)
         if not self.tools.get("task"):
@@ -460,15 +463,18 @@ class VishwaAgent:
             True if should stop
         """
         # Check if stuck in loop (same tool with same output/errors repeatedly)
-        if len(self.context.recent_tool_outputs) >= 5:
-            recent_tools = [out["tool"] for out in self.context.recent_tool_outputs]
+        threshold = self.loop_detection_threshold
+        if len(self.context.recent_tool_outputs) >= threshold:
+            # Convert deque to list for slicing support
+            recent_outputs_list = list(self.context.recent_tool_outputs)
+            recent_tools = [out["tool"] for out in recent_outputs_list]
 
-            # If last 5 tools are the same tool
-            if len(set(recent_tools[-5:])) == 1:
+            # If last N tools are the same tool (where N = threshold)
+            if len(set(recent_tools[-threshold:])) == 1:
                 # Check if it's producing the same error or exact same output
                 # (different outputs mean legitimate exploration, not a loop)
                 recent_outputs = []
-                for out in self.context.recent_tool_outputs[-5:]:
+                for out in recent_outputs_list[-threshold:]:
                     # Use error if present, otherwise use output hash
                     if out.get("error"):
                         recent_outputs.append(("error", out.get("error")))
@@ -479,9 +485,11 @@ class VishwaAgent:
                     else:
                         recent_outputs.append(("none", ""))
 
-                # Only consider stuck if outputs/errors are very similar (3+ identical)
+                # Only consider stuck if outputs/errors are very similar
+                # Allow up to 20% unique outputs (e.g., 3 unique out of 15)
                 unique_outputs = set(recent_outputs)
-                if len(unique_outputs) <= 2:  # Only 1-2 unique outputs from 5 calls
+                max_unique = max(2, threshold // 5)  # At least 2, or 20% of threshold
+                if len(unique_outputs) <= max_unique:
                     self.stop_reason = "stuck_in_loop"
                     return True
 
