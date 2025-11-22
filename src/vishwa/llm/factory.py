@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Optional
 from vishwa.llm.anthropic_provider import AnthropicProvider
 from vishwa.llm.base import BaseLLM, LLMAuthenticationError
 from vishwa.llm.config import LLMConfig
+from vishwa.llm.novita_provider import NovitaProvider
 from vishwa.llm.ollama_provider import OllamaProvider
 from vishwa.llm.openai_provider import OpenAIProvider
 
@@ -23,7 +24,7 @@ class LLMFactory:
 
     Handles:
     - Model name resolution (aliases -> full names)
-    - Provider detection (anthropic, openai, ollama)
+    - Provider detection (anthropic, openai, novita, ollama)
     - Provider instantiation with configuration
     """
 
@@ -40,7 +41,7 @@ class LLMFactory:
             **kwargs: Additional provider-specific parameters
 
         Returns:
-            BaseLLM instance (OpenAIProvider, AnthropicProvider, or OllamaProvider)
+            BaseLLM instance (OpenAIProvider, AnthropicProvider, NovitaProvider, or OllamaProvider)
 
         Raises:
             LLMAuthenticationError: If API key is missing
@@ -49,6 +50,7 @@ class LLMFactory:
         Examples:
             >>> llm = LLMFactory.create("claude")  # Claude Sonnet 4
             >>> llm = LLMFactory.create("gpt-4o")
+            >>> llm = LLMFactory.create("novita")  # Novita DeepSeek
             >>> llm = LLMFactory.create("local")  # Ollama deepseek-coder
         """
         # Resolve model name
@@ -64,6 +66,9 @@ class LLMFactory:
 
         elif provider_name == "openai":
             return OpenAIProvider(model=full_model_name, **kwargs)
+
+        elif provider_name == "novita":
+            return NovitaProvider(model=full_model_name, **kwargs)
 
         elif provider_name == "ollama":
             # Check if Ollama model is available, offer to pull if not

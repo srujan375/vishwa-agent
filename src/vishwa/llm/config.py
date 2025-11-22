@@ -163,11 +163,12 @@ class LLMConfig:
             model_name: Full or partial model name
 
         Returns:
-            Provider name: "anthropic", "openai", or "ollama"
+            Provider name: "anthropic", "openai", "novita", or "ollama"
 
         Examples:
             "claude-sonnet-4-20250514" -> "anthropic"
             "gpt-4o" -> "openai"
+            "deepseek/deepseek-v3.2-exp" -> "novita"
             "deepseek-coder:33b" -> "ollama"
         """
         model_lower = model_name.lower()
@@ -176,6 +177,11 @@ class LLMConfig:
         for pattern, provider in cls.PROVIDER_PATTERNS.items():
             if pattern in model_lower:
                 return provider
+
+        # Check for Novita models (contain / but not :)
+        # Novita uses namespace/model format (e.g., deepseek/deepseek-v3.2-exp)
+        if "/" in model_name and ":" not in model_name:
+            return "novita"
 
         # Check for Ollama models (contain : or are in known local models)
         if ":" in model_name or model_name in [
@@ -217,6 +223,7 @@ class LLMConfig:
         models_by_provider: Dict[str, List[str]] = {
             "anthropic": [],
             "openai": [],
+            "novita": [],
             "ollama": [],
         }
 

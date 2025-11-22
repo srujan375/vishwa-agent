@@ -68,6 +68,26 @@
           "description": "Google Gemma 3 4B - Lightweight local model"
         }
       }
+    },
+    "novita": {
+      "models": {
+        "moonshotai/kimi-k2-thinking": {
+          "name": "moonshotai/kimi-k2-thinking",
+          "description": "Kimi K2 Thinking via Novita - Advanced reasoning model"
+        },
+        "minimax/minimax-m2": {
+          "name": "minimax/minimax-m2",
+          "description": "MiniMax M2 via Novita - Efficient language model"
+        },
+        "deepseek/deepseek-v3.2-exp": {
+          "name": "deepseek/deepseek-v3.2-exp",
+          "description": "DeepSeek V3.2 Experimental via Novita - Latest experimental model"
+        },
+        "zai-org/glm-4.6": {
+          "name": "zai-org/glm-4.6",
+          "description": "GLM-4.6 via Novita - Advanced language model"
+        }
+      }
     }
   },
   "aliases": {
@@ -80,6 +100,7 @@
     "local": "gpt-oss:20b-cloud",
     "ollama": "gpt-oss:20b-cloud",
     "glm": "glm-4.6:cloud",
-    "deepseek": "deepseek-r1:latest"
+    "deepseek": "deepseek-r1:latest",
+    "novita": "deepseek/deepseek-v3.2-exp"
   }
 }
