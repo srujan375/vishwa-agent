@@ -315,9 +315,9 @@ def print_observation(result: any) -> None:
     success = getattr(result, "success", False)
     output = getattr(result, "output", None) or getattr(result, "error", "")
 
-    # Truncate long output
-    if len(str(output)) > 300:
-        output = str(output)[:300] + "..."
+    # Truncate long output (increased from 300 to 1000 for bash results)
+    if len(str(output)) > 1000:
+        output = str(output)[:1000] + f"... [truncated, {len(str(output))} chars total]"
 
     if success:
         console.print(f"  [green]✓[/green] {output}")

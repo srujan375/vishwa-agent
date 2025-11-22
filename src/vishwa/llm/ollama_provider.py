@@ -44,7 +44,7 @@ class OllamaProvider(BaseLLM):
         self,
         model: str = "deepseek-coder:33b",
         base_url: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.7,
     ):
         """

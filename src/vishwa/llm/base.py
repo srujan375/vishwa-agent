@@ -5,7 +5,7 @@ All LLM providers must implement this interface.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Iterator
 
 from vishwa.llm.response import LLMResponse
 
@@ -68,6 +68,31 @@ class BaseLLM(ABC):
         Override in subclasses to provide model-specific limits.
         """
         return None
+
+    def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """
+        Send chat messages and get streaming response.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            tools: Optional list of tools in OpenAI format
+            system: Optional system prompt
+            **kwargs: Provider-specific parameters
+
+        Yields:
+            str: Chunks of the response as they arrive
+
+        Raises:
+            LLMError: If API call fails
+            NotImplementedError: If streaming not supported
+        """
+        raise NotImplementedError(f"{self.provider_name} does not support streaming")
 
 
 # Exceptions

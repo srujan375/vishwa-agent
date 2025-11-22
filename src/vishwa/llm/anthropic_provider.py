@@ -42,7 +42,7 @@ class AnthropicProvider(BaseLLM):
         self,
         model: str = "claude-sonnet-4-5",
         api_key: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.7,
     ):
         """

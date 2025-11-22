@@ -1,7 +1,7 @@
 """
 OpenAI LLM provider.
 
-Supports GPT-4, GPT-4 Turbo, GPT-4o, and other OpenAI models.
+Supports GPT-5, GPT-5.1, GPT-4.1, and other OpenAI models using the Responses API.
 """
 
 import os
@@ -23,18 +23,21 @@ class OpenAIProvider(BaseLLM):
     """
     OpenAI LLM provider.
 
-    Uses the official OpenAI Python SDK.
+    Uses the official OpenAI Python SDK with the Responses API.
     """
 
     # Context limits for different models
     CONTEXT_LIMITS = {
+        "gpt-5.1": 200000,
+        "gpt-5.1-pro": 200000,
+        "gpt-5-pro-2025-10-06": 200000,
+        "gpt-5-2025-08-07": 200000,
+        "gpt-4.1-2025-04-14": 128000,
         "gpt-4o": 128000,
         "gpt-4-turbo": 128000,
         "gpt-4-turbo-2024-04-09": 128000,
         "gpt-4": 8192,
         "gpt-4-32k": 32768,
-        "o1": 128000,
-        "o1-mini": 128000,
     }
 
     def __init__(
@@ -42,7 +45,7 @@ class OpenAIProvider(BaseLLM):
         model: str = "gpt-4o",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.7,
     ):
         """
@@ -94,12 +97,12 @@ class OpenAIProvider(BaseLLM):
         **kwargs: Any,
     ) -> LLMResponse:
         """
-        Send chat request to OpenAI.
+        Send chat request to OpenAI using Responses API.
 
         Args:
             messages: Conversation history
             tools: Optional tools in OpenAI format
-            system: Optional system prompt
+            system: Optional system prompt (used as developer instructions)
             **kwargs: Additional OpenAI parameters
 
         Returns:
@@ -109,35 +112,49 @@ class OpenAIProvider(BaseLLM):
             LLMAPIError: If API call fails
         """
         try:
-            # Prepare messages
-            formatted_messages = []
-
-            # Add system message if provided
-            if system:
-                formatted_messages.append({"role": "system", "content": system})
+            # Convert messages to Responses API format
+            input_messages = []
 
             # Add conversation messages
-            formatted_messages.extend(messages)
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+
+                # Map roles: assistant stays assistant, system/user become user
+                if role == "assistant":
+                    input_messages.append({"role": "assistant", "content": content})
+                else:
+                    # Both system and user messages become user messages in Responses API
+                    input_messages.append({"role": "user", "content": content})
 
             # Prepare API call parameters
             api_params = {
                 "model": self.model,
-                "messages": formatted_messages,
-                "max_tokens": kwargs.get("max_tokens", self.max_tokens),
-                "temperature": kwargs.get("temperature", self.temperature),
+                "input": input_messages,
             }
 
-            # Add tools if provided
-            if tools:
-                api_params["tools"] = tools
-                # Default to auto tool choice
-                api_params["tool_choice"] = kwargs.get("tool_choice", "auto")
+            # Add developer instructions (system prompt) if provided
+            if system:
+                api_params["instructions"] = system
 
-            # Make API call
-            response = self.client.chat.completions.create(**api_params)
+            # Add max_output_tokens (Responses API uses this instead of max_tokens)
+            api_params["max_output_tokens"] = kwargs.get("max_output_tokens", self.max_tokens)
+
+            # Add temperature
+            if "temperature" in kwargs:
+                api_params["temperature"] = kwargs["temperature"]
+            elif self.temperature:
+                api_params["temperature"] = self.temperature
+
+            # Add tools if provided (convert from Chat Completions format to Responses API format)
+            if tools:
+                api_params["tools"] = self._convert_tools_format(tools)
+
+            # Make API call using Responses API
+            response = self.client.responses.create(**api_params)
 
             # Convert to unified format
-            return LLMResponse.from_openai(response)
+            return self._convert_response(response)
 
         except OpenAIError as e:
             error_msg = str(e)
@@ -157,3 +174,102 @@ class OpenAIProvider(BaseLLM):
 
         except Exception as e:
             raise LLMAPIError(f"Unexpected error calling OpenAI: {str(e)}")
+
+    def _convert_tools_format(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Convert tools from Chat Completions format to Responses API format.
+
+        Chat Completions format:
+        {
+            "type": "function",
+            "function": {
+                "name": "tool_name",
+                "description": "...",
+                "parameters": {...}
+            }
+        }
+
+        Responses API format:
+        {
+            "type": "function",
+            "name": "tool_name",
+            "description": "...",
+            "parameters": {...}
+        }
+
+        Args:
+            tools: Tools in Chat Completions format
+
+        Returns:
+            Tools in Responses API format
+        """
+        converted_tools = []
+        for tool in tools:
+            if tool.get("type") == "function" and "function" in tool:
+                # Flatten the nested structure
+                func = tool["function"]
+                converted_tools.append({
+                    "type": "function",
+                    "name": func.get("name"),
+                    "description": func.get("description"),
+                    "parameters": func.get("parameters", {}),
+                })
+            else:
+                # Already in correct format or unknown type, pass through
+                converted_tools.append(tool)
+
+        return converted_tools
+
+    def _convert_response(self, response: Any) -> LLMResponse:
+        """
+        Convert Responses API response to unified LLMResponse format.
+
+        Args:
+            response: OpenAI Responses API response
+
+        Returns:
+            LLMResponse with unified format
+        """
+        from vishwa.llm.response import ToolCall, Usage
+
+        # Extract text content from output
+        content_text = None
+        tool_calls = []
+
+        if hasattr(response, "output") and response.output:
+            for item in response.output:
+                if hasattr(item, "content") and item.content:
+                    for content_block in item.content:
+                        if hasattr(content_block, "type"):
+                            if content_block.type == "output_text":
+                                content_text = content_block.text
+                            elif content_block.type == "function_call":
+                                # Handle tool calls
+                                import json
+                                tool_calls.append(
+                                    ToolCall(
+                                        id=getattr(content_block, "id", ""),
+                                        name=content_block.name,
+                                        arguments=json.loads(content_block.arguments)
+                                        if isinstance(content_block.arguments, str)
+                                        else content_block.arguments,
+                                    )
+                                )
+
+        # Extract usage information
+        usage_obj = None
+        if hasattr(response, "usage") and response.usage:
+            usage_obj = Usage(
+                prompt_tokens=getattr(response.usage, "input_tokens", 0),
+                completion_tokens=getattr(response.usage, "output_tokens", 0),
+                total_tokens=getattr(response.usage, "total_tokens", 0),
+            )
+
+        return LLMResponse(
+            content=content_text,
+            tool_calls=tool_calls,
+            finish_reason=getattr(response, "finish_reason", "stop"),
+            model=getattr(response, "model", self.model),
+            usage=usage_obj,
+            raw_response=response,
+        )

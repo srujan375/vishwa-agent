@@ -344,8 +344,10 @@ class VishwaAgent:
         # Log tool call
         logger.tool_start(tool_name, arguments)
 
-        # Note: Tool syntax is hidden - tools handle their own preview/approval
-        # The conversational output is shown by the LLM's messages instead
+        # Show tool call to user
+        if self.verbose:
+            from vishwa.cli.ui import print_action
+            print_action(tool_name, arguments)
 
         # Get tool
         tool = self.tools.get(tool_name)
@@ -356,17 +358,30 @@ class VishwaAgent:
                 suggestion="Use one of the available tools",
             )
             logger.tool_result(tool_name, False, None, result.error)
+
+            # Show error to user
+            if self.verbose:
+                from vishwa.cli.ui import print_observation
+                print_observation(result)
+
             return result
 
         # Check if trying to create a file that was already created this session
         if tool_name == "write_file":
             file_path = arguments.get("path", "")
             if self.context.was_file_created(file_path):
-                return ToolResult(
+                result = ToolResult(
                     success=False,
                     error=f"File '{file_path}' was already created in this session",
                     suggestion="The file already exists. Use str_replace to modify it, or use a different filename.",
                 )
+
+                # Show error to user
+                if self.verbose:
+                    from vishwa.cli.ui import print_observation
+                    print_observation(result)
+
+                return result
 
         # Validate required parameters BEFORE execution
         # This catches missing parameters early with helpful error messages
@@ -415,8 +430,10 @@ class VishwaAgent:
                     tool=tool_name,
                 )
 
-            # Note: Tool results are hidden - tools show their own diffs/output
-            # Errors are still logged but not printed (LLM will see them and can explain)
+            # Show tool result to user
+            if self.verbose:
+                from vishwa.cli.ui import print_observation
+                print_observation(result)
 
             return result
 
@@ -427,6 +444,12 @@ class VishwaAgent:
             )
             logger.tool_result(tool_name, False, None, result.error)
             logger.error("tool", f"Exception during {tool_name} execution", exception=e)
+
+            # Show error to user
+            if self.verbose:
+                from vishwa.cli.ui import print_observation
+                print_observation(result)
+
             return result
 
     def _should_stop(self) -> bool:
@@ -436,13 +459,31 @@ class VishwaAgent:
         Returns:
             True if should stop
         """
-        # Check if stuck in loop (same tool called many times)
+        # Check if stuck in loop (same tool with same output/errors repeatedly)
         if len(self.context.recent_tool_outputs) >= 5:
             recent_tools = [out["tool"] for out in self.context.recent_tool_outputs]
-            # If last 5 tools are the same, probably stuck
+
+            # If last 5 tools are the same tool
             if len(set(recent_tools[-5:])) == 1:
-                self.stop_reason = "stuck_in_loop"
-                return True
+                # Check if it's producing the same error or exact same output
+                # (different outputs mean legitimate exploration, not a loop)
+                recent_outputs = []
+                for out in self.context.recent_tool_outputs[-5:]:
+                    # Use error if present, otherwise use output hash
+                    if out.get("error"):
+                        recent_outputs.append(("error", out.get("error")))
+                    elif out.get("output"):
+                        # For bash/read_file, check if output is identical
+                        output_str = str(out.get("output", ""))
+                        recent_outputs.append(("output", output_str[:500]))  # Compare first 500 chars
+                    else:
+                        recent_outputs.append(("none", ""))
+
+                # Only consider stuck if outputs/errors are very similar (3+ identical)
+                unique_outputs = set(recent_outputs)
+                if len(unique_outputs) <= 2:  # Only 1-2 unique outputs from 5 calls
+                    self.stop_reason = "stuck_in_loop"
+                    return True
 
         # Check if tests passed (if task involves tests)
         if "test" in self.task.lower():

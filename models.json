@@ -23,6 +23,14 @@
     },
     "openai": {
       "models": {
+        "gpt-5.1": {
+          "name": "gpt-5.1",
+          "description": "GPT-5.1 - Latest generation, most advanced"
+        },
+        "gpt-5.1-pro": {
+          "name": "gpt-5.1-pro",
+          "description": "GPT-5.1 Pro - Most capable variant"
+        },
         "gpt-5-pro-2025-10-06": {
           "name": "gpt-5-pro-2025-10-06",
           "description": "gpt-5-pro - Latest and most capable"
