@@ -244,6 +244,10 @@ def main():
     """Main entry point for the autocomplete service."""
     import argparse
     import os
+    from dotenv import load_dotenv
+
+    # Load environment variables from .env file
+    load_dotenv()
 
     # Get model from environment: VISHWA_AUTOCOMPLETE_MODEL > VISHWA_MODEL > default
     env_model = os.getenv('VISHWA_AUTOCOMPLETE_MODEL') or os.getenv('VISHWA_MODEL')

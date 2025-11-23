@@ -1,0 +1,8 @@
+{
+  "vishwa.autocomplete.enabled": true,
+  "vishwa.autocomplete.autoTrigger": true,
+  "vishwa.autocomplete.model": "zai-org/glm-4.6",
+  "vishwa.autocomplete.debounceDelay": 300,
+  "vishwa.autocomplete.contextLines": 20,
+  "vishwa.autocomplete.pythonPath": "/Users/srushtijujare/Workspace/Srujan Jujare/Personal/Vishwa/venv/bin/python"
+}
