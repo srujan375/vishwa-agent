@@ -4,7 +4,7 @@ Caching layer for autocomplete suggestions.
 Caches suggestions based on file path, cursor position, and surrounding context.
 """
 
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 from dataclasses import dataclass
 from hashlib import md5
 import time
@@ -16,6 +16,7 @@ class CachedSuggestion:
     suggestion: str
     timestamp: float
     hits: int = 0
+    prefix: str = ""  # Store the prefix for prefix matching
 
 
 class SuggestionCache:
@@ -38,6 +39,7 @@ class SuggestionCache:
         self.ttl = ttl
         self._cache: Dict[str, CachedSuggestion] = {}
         self._file_versions: Dict[str, str] = {}  # Track file content hashes
+        self._prefix_cache: Dict[str, List[str]] = {}  # Prefix -> list of cache keys
 
     def _make_key(
         self,
@@ -84,7 +86,7 @@ class SuggestionCache:
         file_content: str
     ) -> Optional[str]:
         """
-        Get cached suggestion if available.
+        Get cached suggestion if available, with prefix matching support.
 
         Args:
             file_path: Path to file
@@ -109,22 +111,33 @@ class SuggestionCache:
         # Update file version
         self._file_versions[file_path] = current_version
 
-        # Try to get from cache
+        # Try exact match first
         key = self._make_key(file_path, cursor_line, cursor_char, context)
         cached = self._cache.get(key)
 
-        if not cached:
-            return None
+        if cached and time.time() - cached.timestamp <= self.ttl:
+            cached.hits += 1
+            return cached.suggestion
 
-        # Check if expired
-        if time.time() - cached.timestamp > self.ttl:
-            del self._cache[key]
-            return None
+        # Try prefix matching if exact match not found
+        # Extract current line prefix for matching
+        lines = context.split('\n')
+        if lines:
+            current_line_text = lines[-1] if lines else ""
 
-        # Update hit count
-        cached.hits += 1
+            # Try to find a cached suggestion with matching prefix
+            prefix_key = f"{file_path}:{cursor_line}"
+            matching_keys = self._prefix_cache.get(prefix_key, [])
 
-        return cached.suggestion
+            for match_key in matching_keys:
+                cached_match = self._cache.get(match_key)
+                if cached_match and time.time() - cached_match.timestamp <= self.ttl:
+                    # Check if the prefix matches
+                    if current_line_text.startswith(cached_match.prefix):
+                        cached_match.hits += 1
+                        return cached_match.suggestion
+
+        return None
 
     def put(
         self,
@@ -136,7 +149,7 @@ class SuggestionCache:
         suggestion: str
     ):
         """
-        Store suggestion in cache.
+        Store suggestion in cache with prefix indexing.
 
         Args:
             file_path: Path to file
@@ -154,13 +167,25 @@ class SuggestionCache:
         if len(self._cache) >= self.max_size:
             self._evict_lru()
 
-        # Store suggestion
+        # Extract prefix from current line
+        lines = context.split('\n')
+        current_line_prefix = lines[-1] if lines else ""
+
+        # Store suggestion with prefix
         key = self._make_key(file_path, cursor_line, cursor_char, context)
         self._cache[key] = CachedSuggestion(
             suggestion=suggestion,
             timestamp=time.time(),
-            hits=0
+            hits=0,
+            prefix=current_line_prefix
         )
+
+        # Update prefix index
+        prefix_key = f"{file_path}:{cursor_line}"
+        if prefix_key not in self._prefix_cache:
+            self._prefix_cache[prefix_key] = []
+        if key not in self._prefix_cache[prefix_key]:
+            self._prefix_cache[prefix_key].append(key)
 
     def _invalidate_file(self, file_path: str):
         """
@@ -176,6 +201,14 @@ class SuggestionCache:
         ]
         for key in keys_to_remove:
             del self._cache[key]
+
+        # Remove from prefix cache
+        prefix_keys_to_remove = [
+            pk for pk in self._prefix_cache.keys()
+            if pk.startswith(f"{file_path}:")
+        ]
+        for pk in prefix_keys_to_remove:
+            del self._prefix_cache[pk]
 
     def _evict_lru(self):
         """Evict least recently used entry."""
@@ -193,6 +226,7 @@ class SuggestionCache:
         """Clear all cached suggestions."""
         self._cache.clear()
         self._file_versions.clear()
+        self._prefix_cache.clear()
 
     def get_stats(self) -> Dict[str, any]:
         """

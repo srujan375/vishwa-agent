@@ -11,6 +11,7 @@ from typing import Optional
 
 @dataclass
 class Config:
+
     """Vishwa configuration."""
 
     model: Optional[str] = None

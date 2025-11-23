@@ -41,12 +41,12 @@ Given: "if user.is_authenticated:<CURSOR>"
 Response: "\\n    return render(request, 'dashboard.html')"
 """
 
-    def __init__(self, model: str = "claude-haiku", context_lines: int = 50):
+    def __init__(self, model: str = "gemma3:4b", context_lines: int = 20):
         """
         Initialize suggestion engine.
 
         Args:
-            model: Model to use for suggestions (e.g., 'claude-haiku', 'gpt-4o-mini', 'codestral')
+            model: Model to use for suggestions (e.g., 'gemma3:4b', 'claude-haiku-4-5', 'gpt-4o-mini')
             context_lines: Number of context lines to include
         """
         self.model = model
@@ -114,7 +114,7 @@ Response: "\\n    return render(request, 'dashboard.html')"
                 ],
                 system=self.SYSTEM_PROMPT,
                 temperature=0.2,  # Low temperature for more deterministic output
-                max_tokens=200,   # Limit response length for speed
+                max_tokens=100,   # Limit response length for speed
             )
 
             suggestion_text = response.content.strip()

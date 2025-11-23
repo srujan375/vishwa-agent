@@ -45,7 +45,7 @@ class ContextBuilder:
         '.php': 'php',
     }
 
-    def __init__(self, context_lines: int = 50):
+    def __init__(self, context_lines: int = 20):
         """
         Initialize context builder.
 

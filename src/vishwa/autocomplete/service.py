@@ -33,7 +33,7 @@ class AutocompleteService:
     Autocomplete service that handles requests via JSON-RPC over stdio.
     """
 
-    def __init__(self, default_model: str = "claude-haiku"):
+    def __init__(self, default_model: str = "gemma3:4b"):
         """
         Initialize autocomplete service.
 
@@ -243,12 +243,17 @@ class AutocompleteService:
 def main():
     """Main entry point for the autocomplete service."""
     import argparse
+    import os
+
+    # Get model from environment: VISHWA_AUTOCOMPLETE_MODEL > VISHWA_MODEL > default
+    env_model = os.getenv('VISHWA_AUTOCOMPLETE_MODEL') or os.getenv('VISHWA_MODEL')
+    default_model = env_model if env_model else 'gemma3:4b'
 
     parser = argparse.ArgumentParser(description='Vishwa Autocomplete Service')
     parser.add_argument(
         '--model',
-        default='claude-haiku',
-        help='Default model to use (e.g., claude-haiku, gpt-4o-mini, codestral)'
+        default=default_model,
+        help=f'Model to use (default from env: {default_model}). Examples: gemma3:4b, claude-haiku-4-5, zai-org/glm-4.6'
     )
     parser.add_argument(
         '--stdio',
@@ -260,6 +265,8 @@ def main():
     args = parser.parse_args()
 
     logger.info(f"Starting Vishwa autocomplete service with model: {args.model}")
+    if env_model:
+        logger.info(f"Model loaded from environment variable: {env_model}")
 
     service = AutocompleteService(default_model=args.model)
     service.run()
