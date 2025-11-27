@@ -7,6 +7,8 @@ This service runs as a background process and handles autocomplete requests.
 import sys
 import json
 import logging
+import tempfile
+import os
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -20,8 +22,10 @@ from vishwa.autocomplete.protocol import (
 
 
 # Setup logging to file (not stdout, which is used for protocol)
+# Use system temp directory for cross-platform compatibility
+log_file = os.path.join(tempfile.gettempdir(), 'vishwa-autocomplete.log')
 logging.basicConfig(
-    filename='/tmp/vishwa-autocomplete.log',
+    filename=log_file,
     level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -240,6 +244,36 @@ class AutocompleteService:
             logger.info("Autocomplete service shutting down")
 
 
+def _prewarm_ollama_model(model: str) -> bool:
+    """
+    Pre-warm an Ollama model by loading it into memory with keep_alive=-1.
+
+    Args:
+        model: Model name to pre-warm
+
+    Returns:
+        True if successful (or if not an Ollama model)
+    """
+    # Only pre-warm local Ollama models (no slash = Ollama model)
+    if '/' in model or model.startswith('claude') or model.startswith('gpt'):
+        return True  # Not an Ollama model, skip
+
+    try:
+        from vishwa.llm.ollama_provider import OllamaProvider
+
+        logger.info(f"Pre-warming Ollama model: {model} (this may take a moment on first load)")
+
+        if OllamaProvider.keep_model_loaded(model, keep_alive="-1"):
+            logger.info(f"Model {model} is now loaded in memory (keep_alive=-1)")
+            return True
+        else:
+            logger.warning(f"Failed to pre-warm model {model}")
+            return False
+    except Exception as e:
+        logger.warning(f"Error pre-warming model: {e}")
+        return False
+
+
 def main():
     """Main entry point for the autocomplete service."""
     import argparse
@@ -271,6 +305,9 @@ def main():
     logger.info(f"Starting Vishwa autocomplete service with model: {args.model}")
     if env_model:
         logger.info(f"Model loaded from environment variable: {env_model}")
+
+    # Pre-warm Ollama model to keep it in memory
+    _prewarm_ollama_model(args.model)
 
     service = AutocompleteService(default_model=args.model)
     service.run()

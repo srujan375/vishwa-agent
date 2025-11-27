@@ -24,21 +24,32 @@ class SuggestionEngine:
     # Autocomplete-specific system prompt
     SYSTEM_PROMPT = """You are an expert code autocomplete assistant. Your job is to predict what the developer wants to type next.
 
-Rules:
-1. Provide ONLY the code to insert at the cursor position - no explanations, no markdown
-2. Keep suggestions concise and relevant to the immediate context
-3. Match the existing code style and indentation exactly
-4. For simple completions (1-2 lines), be very precise
-5. For multi-line completions, complete the logical block (function, if statement, etc.)
-6. Never repeat code that's already written
-7. Don't include the code before the cursor in your response
+CRITICAL RULES:
+1. NEVER repeat any code that already exists - only provide NEW code to add
+2. Provide ONLY the code to insert at the cursor position - no explanations, no markdown, no code fences
+3. The code before <CURSOR> is already written - DO NOT include it in your response
+4. If the line is complete, suggest what should come on the NEXT line
+5. Match the existing code style and indentation exactly
+6. Keep suggestions concise and relevant to the immediate context
+7. Use the provided function signatures and imports to make accurate suggestions
 
-Example:
+WRONG - repeating existing code:
+Given: "result = num1 + num2<CURSOR>"
+Bad Response: "result = num1 + num2"  # This repeats existing code!
+Good Response: ""  # Line is complete, or suggest next line
+
+CORRECT examples:
 Given: "def calculate_sum(a, b):\\n    return <CURSOR>"
 Response: "a + b"
 
+Given: "result = num1 + num2<CURSOR>" (line is complete)
+Response: "" or the next logical line like "print(result)"
+
 Given: "if user.is_authenticated:<CURSOR>"
 Response: "\\n    return render(request, 'dashboard.html')"
+
+Given: "    name = <CURSOR>"
+Response: "input('Enter name: ')"
 """
 
     def __init__(self, model: str = "gemma3:4b", context_lines: int = 20):
@@ -148,8 +159,8 @@ Response: "\\n    return render(request, 'dashboard.html')"
         current_line = context.current_line
         cursor_pos = context.cursor_position
 
-        # Skip if cursor is at the start of the line
-        if cursor_pos == 0:
+        # Skip if cursor is at the start of an empty line
+        if cursor_pos == 0 and not current_line.strip():
             return True
 
         # Skip if we're in the middle of a word
@@ -158,10 +169,19 @@ Response: "\\n    return render(request, 'dashboard.html')"
             if char_after.isalnum() or char_after == '_':
                 return True
 
+        # Check if cursor is at the end of the line (or only whitespace after)
+        remaining_line = current_line[cursor_pos:].strip()
+        is_at_line_end = len(remaining_line) == 0
+
+        # If at end of line, allow suggestion for next line completion
+        if is_at_line_end and cursor_pos > 0:
+            return False
+
         # Get character before cursor
         if cursor_pos > 0:
             char_before = current_line[cursor_pos - 1]
             # Skip if we just typed an alphanumeric character (wait for space/punctuation)
+            # But allow if we're at the end of a line (for next-line suggestions)
             if char_before.isalnum() or char_before == '_':
                 # Allow suggestion after certain patterns like "return ", "def ", etc.
                 line_up_to_cursor = current_line[:cursor_pos].strip()
@@ -189,6 +209,26 @@ Response: "\\n    return render(request, 'dashboard.html')"
         # Add language and file context
         prompt_parts.append(f"Complete the following {context.language} code:")
         prompt_parts.append("")
+
+        # Include imports for context (helps with available modules/functions)
+        if context.imports:
+            prompt_parts.append("# Imports:")
+            for imp in context.imports[:10]:  # Limit to 10 imports
+                prompt_parts.append(imp)
+            prompt_parts.append("")
+
+        # Include referenced function definitions for context
+        if context.referenced_functions:
+            prompt_parts.append("# Available functions in this file:")
+            for func in context.referenced_functions[:5]:  # Limit to 5 functions
+                prompt_parts.append(f"# {func.signature}")
+                if func.docstring:
+                    prompt_parts.append(f"#   \"\"\"{func.docstring}\"\"\"")
+                if func.body_preview:
+                    # Show first line of body as hint
+                    first_line = func.body_preview.split('\n')[0]
+                    prompt_parts.append(f"#   {first_line}...")
+            prompt_parts.append("")
 
         # Show context before cursor (last 15 lines)
         lines_before = context.lines_before[-15:] if len(context.lines_before) > 15 else context.lines_before
@@ -230,6 +270,49 @@ Response: "\\n    return render(request, 'dashboard.html')"
         # Remove common markdown artifacts
         suggestion = suggestion.strip()
         suggestion = suggestion.strip('`')
+
+        # Syntax-aware: Check if suggestion should start on a new line
+        # This handles cases where cursor is at end of a complete statement
+        current_line = context.current_line
+        cursor_pos = context.cursor_position
+        line_up_to_cursor = current_line[:cursor_pos].rstrip()
+
+        # If the line before cursor looks complete (ends with certain patterns)
+        # and the suggestion doesn't start with a newline, prepend one
+        if line_up_to_cursor and not suggestion.startswith('\n'):
+            # Patterns that indicate a complete statement
+            complete_patterns = [
+                # Assignments and expressions
+                lambda l: l[-1].isalnum() or l[-1] in ')]}',
+                # Already ends with colon (block start)
+                lambda l: l.endswith(':'),
+            ]
+
+            # Check if cursor is truly at the end of meaningful content
+            remaining_line = current_line[cursor_pos:].strip()
+            is_at_line_end = len(remaining_line) == 0
+
+            if is_at_line_end and any(check(line_up_to_cursor) for check in complete_patterns):
+                # The suggestion starts a new statement, prepend newline with proper indentation
+                # Detect the current indentation
+                current_indent = len(current_line) - len(current_line.lstrip())
+
+                # For Python, check if we need to add indentation (after colon)
+                if line_up_to_cursor.endswith(':'):
+                    # Increase indent after block start
+                    indent_char = '\t' if '\t' in current_line[:current_indent] else ' '
+                    indent_size = 4 if indent_char == ' ' else 1
+                    new_indent = current_indent + indent_size
+                else:
+                    # Keep same indentation level
+                    new_indent = current_indent
+
+                indent_str = current_line[:current_indent] if current_indent > 0 else ''
+                # Use same indent character pattern
+                if new_indent > current_indent:
+                    indent_str = ' ' * new_indent if ' ' in indent_str or not indent_str else '\t' * (new_indent // 4 + 1)
+
+                suggestion = '\n' + indent_str + suggestion.lstrip()
 
         # Remove language tags (e.g., ```python)
         if suggestion.startswith('```'):

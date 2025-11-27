@@ -78,8 +78,8 @@
         },
         "vishwa.autocomplete.pythonPath": {
           "type": "string",
-          "default": "python",
-          "description": "Path to Python executable"
+          "default": "auto",
+          "description": "Path to Python executable. Use 'auto' to auto-detect from VS Code Python extension or system PATH"
         }
       }
     },

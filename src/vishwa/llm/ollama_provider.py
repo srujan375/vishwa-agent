@@ -221,6 +221,40 @@ class OllamaProvider(BaseLLM):
         return model_name in available_models
 
     @staticmethod
+    def keep_model_loaded(model_name: str, base_url: Optional[str] = None, keep_alive: str = "-1") -> bool:
+        """
+        Keep an Ollama model loaded in memory using native API.
+
+        This sends a minimal request to load the model and set keep_alive,
+        ensuring fast subsequent responses.
+
+        Args:
+            model_name: Name of the model to keep loaded
+            base_url: Ollama base URL
+            keep_alive: How long to keep loaded ("-1" = forever, "30m" = 30 minutes)
+
+        Returns:
+            True if successful
+        """
+        try:
+            base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+            api_url = base_url.replace("/v1", "") + "/api/generate"
+
+            # Send minimal request just to load model and set keep_alive
+            response = requests.post(
+                api_url,
+                json={
+                    "model": model_name,
+                    "prompt": "",  # Empty prompt - just loads the model
+                    "keep_alive": keep_alive,
+                },
+                timeout=120,  # Allow time for initial model load
+            )
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    @staticmethod
     def pull_model(model_name: str, base_url: Optional[str] = None, show_progress: bool = True) -> bool:
         """
         Pull an Ollama model.

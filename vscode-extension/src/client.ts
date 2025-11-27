@@ -1,6 +1,104 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import { TextEncoder } from 'util';
+
+/**
+ * Auto-detect Python executable path
+ * Tries multiple strategies in order of preference
+ */
+async function detectPythonPath(): Promise<string> {
+    // 1. Check if user has explicitly configured a path
+    const config = vscode.workspace.getConfiguration('vishwa.autocomplete');
+    const configuredPath = config.get<string>('pythonPath', '');
+    if (configuredPath && configuredPath !== 'python' && configuredPath !== 'auto') {
+        // User has set a custom path, validate it exists
+        if (fs.existsSync(configuredPath)) {
+            return configuredPath;
+        }
+    }
+
+    // 2. Try to get Python path from VS Code Python extension
+    const pythonExtension = vscode.extensions.getExtension('ms-python.python');
+    if (pythonExtension) {
+        if (!pythonExtension.isActive) {
+            try {
+                await pythonExtension.activate();
+            } catch {
+                // Ignore activation errors
+            }
+        }
+        try {
+            const pythonApi = pythonExtension.exports;
+            if (pythonApi?.settings?.getExecutionDetails) {
+                const details = pythonApi.settings.getExecutionDetails(
+                    vscode.workspace.workspaceFolders?.[0]?.uri
+                );
+                if (details?.execCommand?.[0]) {
+                    return details.execCommand[0];
+                }
+            }
+            // Alternative API for newer versions
+            if (pythonApi?.environments?.getActiveEnvironmentPath) {
+                const envPath = await pythonApi.environments.getActiveEnvironmentPath();
+                if (envPath?.path) {
+                    return envPath.path;
+                }
+            }
+        } catch {
+            // Ignore errors from Python extension API
+        }
+    }
+
+    // 3. Try common Python commands
+    const pythonCommands = process.platform === 'win32'
+        ? ['python', 'python3', 'py']
+        : ['python3', 'python'];
+
+    for (const cmd of pythonCommands) {
+        try {
+            const result = cp.spawnSync(cmd, ['--version'], {
+                encoding: 'utf8',
+                timeout: 5000,
+                shell: process.platform === 'win32'
+            });
+            if (result.status === 0) {
+                return cmd;
+            }
+        } catch {
+            // Command not found, try next
+        }
+    }
+
+    // 4. Check common installation paths
+    const commonPaths = process.platform === 'win32'
+        ? [
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'python.exe'),
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'python.exe'),
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python39', 'python.exe'),
+            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+            'C:\\Python311\\python.exe',
+            'C:\\Python310\\python.exe',
+            'C:\\Python39\\python.exe',
+            'C:\\Python312\\python.exe',
+        ]
+        : [
+            '/usr/bin/python3',
+            '/usr/local/bin/python3',
+            '/opt/homebrew/bin/python3',
+            '/usr/bin/python',
+        ];
+
+    for (const pythonPath of commonPaths) {
+        if (fs.existsSync(pythonPath)) {
+            return pythonPath;
+        }
+    }
+
+    // 5. Fallback to 'python' and hope for the best
+    return 'python';
+}
 
 interface JsonRpcRequest {
     jsonrpc: string;
@@ -44,10 +142,10 @@ export class VishwaClient {
     }
 
     async start(): Promise<void> {
-        const config = vscode.workspace.getConfiguration('vishwa.autocomplete');
-        const pythonPath = config.get<string>('pythonPath', 'python');
+        const pythonPath = await detectPythonPath();
 
         this.outputChannel.appendLine(`Starting Vishwa service (model from .env)`);
+        this.outputChannel.appendLine(`Using Python: ${pythonPath}`);
 
         try {
             // Don't pass --model flag, let service use .env configuration
@@ -152,13 +250,13 @@ export class VishwaClient {
             const requestJson = JSON.stringify(request) + '\n';
             this.process!.stdin!.write(requestJson);
 
-            // Set timeout
+            // Set timeout (15s for warm Ollama models - first request may be slower)
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
                     reject(new Error('Request timeout'));
                 }
-            }, 10000); // 10 second timeout
+            }, 15000);
         });
     }
 
