@@ -280,8 +280,15 @@ def main():
     import os
     from dotenv import load_dotenv
 
-    # Load environment variables from .env file
-    load_dotenv()
+    # Load environment variables from .env files
+    # Priority (later overrides earlier):
+    # 1. ~/.vishwa/.env (global defaults - API keys, default model)
+    # 2. Current working directory .env (project-specific overrides)
+    vishwa_home = Path.home() / '.vishwa' / '.env'
+    if vishwa_home.exists():
+        load_dotenv(vishwa_home)
+    # Load project .env to override global settings
+    load_dotenv(override=True)
 
     # Get model from environment: VISHWA_AUTOCOMPLETE_MODEL > VISHWA_MODEL > default
     env_model = os.getenv('VISHWA_AUTOCOMPLETE_MODEL') or os.getenv('VISHWA_MODEL')
