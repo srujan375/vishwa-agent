@@ -40,62 +40,41 @@ function pythonExists(pythonPath: string): boolean {
 }
 
 /**
- * Get the vishwa project root directory (parent of vscode-extension)
+ * Get the user's dedicated vishwa directory (~/.vishwa/)
+ * This is where users can install vishwa globally for use across all projects
  */
-function getVishwaProjectRoot(): string | undefined {
-    try {
-        // __dirname in compiled JS will be in 'out' folder
-        // vscode-extension/out/client.js -> vscode-extension -> vishwa (project root)
-        const extensionDir = path.resolve(__dirname, '..');
-        const projectRoot = path.resolve(extensionDir, '..');
-
-        // Verify this looks like the vishwa project
-        if (fs.existsSync(path.join(projectRoot, 'src', 'vishwa')) ||
-            fs.existsSync(path.join(projectRoot, 'pyproject.toml'))) {
-            return projectRoot;
-        }
-    } catch {
-        // Ignore errors
-    }
-    return undefined;
+function getVishwaUserDir(): string {
+    return path.join(os.homedir(), '.vishwa');
 }
 
 /**
  * Get platform-specific Python candidates
  * Returns paths where Python is commonly installed on each OS
+ *
+ * Priority:
+ * 1. User's dedicated vishwa venv (~/.vishwa/venv/) - recommended for global install
+ * 2. System/global Python (where user ran `pip install vishwa`)
+ * 3. Common Python installations
  */
 function getPlatformPythonCandidates(): string[] {
     const homeDir = os.homedir();
     const candidates: string[] = [];
 
-    // FIRST PRIORITY: Check vishwa project's own venv (where pip install -e . was run)
-    const vishwaRoot = getVishwaProjectRoot();
-    if (vishwaRoot) {
-        if (process.platform === 'win32') {
-            // Common venv names on Windows
-            candidates.push(path.join(vishwaRoot, 'vishwa', 'Scripts', 'python.exe'));
-            candidates.push(path.join(vishwaRoot, 'venv', 'Scripts', 'python.exe'));
-            candidates.push(path.join(vishwaRoot, '.venv', 'Scripts', 'python.exe'));
-        } else {
-            // Common venv names on macOS/Linux
-            candidates.push(path.join(vishwaRoot, 'vishwa', 'bin', 'python'));
-            candidates.push(path.join(vishwaRoot, 'venv', 'bin', 'python'));
-            candidates.push(path.join(vishwaRoot, '.venv', 'bin', 'python'));
-        }
-    }
-
-    // SECOND PRIORITY: User's home directory vishwa installation (~/.vishwa/)
+    // FIRST PRIORITY: User's dedicated vishwa installation (~/.vishwa/)
+    // This is where users should install vishwa for global use
+    const vishwaUserDir = getVishwaUserDir();
     if (process.platform === 'win32') {
-        candidates.push(path.join(homeDir, '.vishwa', 'Scripts', 'python.exe'));
-        candidates.push(path.join(homeDir, '.vishwa', 'venv', 'Scripts', 'python.exe'));
+        candidates.push(path.join(vishwaUserDir, 'venv', 'Scripts', 'python.exe'));
+        candidates.push(path.join(vishwaUserDir, 'Scripts', 'python.exe'));
     } else {
-        candidates.push(path.join(homeDir, '.vishwa', 'bin', 'python'));
-        candidates.push(path.join(homeDir, '.vishwa', 'venv', 'bin', 'python'));
+        candidates.push(path.join(vishwaUserDir, 'venv', 'bin', 'python'));
+        candidates.push(path.join(vishwaUserDir, 'bin', 'python'));
     }
 
+    // SECOND PRIORITY: System/global Python installations
+    // These are checked for vishwa installation in detectPythonPath()
     switch (process.platform) {
         case 'win32':
-            // Windows: Check Python launcher, common install locations, user installs
             candidates.push(
                 // Python launcher (recommended way on Windows)
                 'py',
@@ -120,7 +99,6 @@ function getPlatformPythonCandidates(): string[] {
             break;
 
         case 'darwin':
-            // macOS: Homebrew (Apple Silicon & Intel), pyenv, system Python
             candidates.push(
                 // Command-line (will use PATH)
                 'python3',
@@ -150,7 +128,6 @@ function getPlatformPythonCandidates(): string[] {
 
         case 'linux':
         default:
-            // Linux: System Python, pyenv, user installs
             candidates.push(
                 // Command-line (will use PATH)
                 'python3',
@@ -182,10 +159,11 @@ function getPlatformPythonCandidates(): string[] {
  * Auto-detect Python executable path that has vishwa installed.
  *
  * Priority order:
- * 1. User-configured path (always respected)
- * 2. System/global Python with vishwa installed
- * 3. VS Code workspace Python with vishwa installed
- * 4. Any available Python (will show clear error about missing vishwa)
+ * 1. User-configured path in settings (always respected)
+ * 2. Dedicated vishwa venv (~/.vishwa/venv/)
+ * 3. System/global Python with vishwa installed (`pip install vishwa`)
+ * 4. VS Code workspace Python interpreter (if it has vishwa)
+ * 5. First available Python (will show error about missing vishwa)
  *
  * Works on Windows, macOS, and Linux.
  */
@@ -318,13 +296,9 @@ export class VishwaClient {
     async start(): Promise<void> {
         this.outputChannel.appendLine(`Detecting Python with vishwa installed...`);
 
-        // Log the vishwa project root for debugging
-        const vishwaRoot = getVishwaProjectRoot();
-        if (vishwaRoot) {
-            this.outputChannel.appendLine(`Vishwa project root: ${vishwaRoot}`);
-        } else {
-            this.outputChannel.appendLine(`Vishwa project root: not found`);
-        }
+        // Log search locations for debugging
+        const vishwaUserDir = getVishwaUserDir();
+        this.outputChannel.appendLine(`Checking ~/.vishwa: ${vishwaUserDir}`);
 
         const pythonPath = await detectPythonPath();
 
@@ -434,13 +408,13 @@ export class VishwaClient {
             const requestJson = JSON.stringify(request) + '\n';
             this.process!.stdin!.write(requestJson);
 
-            // Set timeout (15s for warm Ollama models - first request may be slower)
+            // Set timeout (30s to allow for cold model loading on CPU)
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
                     reject(new Error('Request timeout'));
                 }
-            }, 15000);
+            }, 30000);
         });
     }
 
