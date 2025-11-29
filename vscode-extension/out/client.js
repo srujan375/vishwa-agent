@@ -38,21 +38,162 @@ const vscode = __importStar(require("vscode"));
 const cp = __importStar(require("child_process"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const os = __importStar(require("os"));
 /**
- * Auto-detect Python executable path
- * Tries multiple strategies in order of preference
+ * Check if a Python executable has vishwa installed
+ */
+function hasVishwaInstalled(pythonPath) {
+    try {
+        const result = cp.spawnSync(pythonPath, ['-c', 'import vishwa.autocomplete.service'], {
+            encoding: 'utf8',
+            timeout: 5000,
+            shell: process.platform === 'win32',
+            windowsHide: true
+        });
+        return result.status === 0;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Check if a Python command/path exists and is executable
+ */
+function pythonExists(pythonPath) {
+    try {
+        const result = cp.spawnSync(pythonPath, ['--version'], {
+            encoding: 'utf8',
+            timeout: 5000,
+            shell: process.platform === 'win32',
+            windowsHide: true
+        });
+        return result.status === 0;
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Get platform-specific Python candidates
+ * Returns paths where Python is commonly installed on each OS
+ */
+function getPlatformPythonCandidates() {
+    const homeDir = os.homedir();
+    switch (process.platform) {
+        case 'win32':
+            // Windows: Check Python launcher, common install locations, user installs
+            return [
+                // Python launcher (recommended way on Windows)
+                'py',
+                'python',
+                'python3',
+                // User-local installs (Microsoft Store, python.org installer)
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python313', 'python.exe'),
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'python.exe'),
+                path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'python.exe'),
+                // System-wide installs
+                'C:\\Python313\\python.exe',
+                'C:\\Python312\\python.exe',
+                'C:\\Python311\\python.exe',
+                'C:\\Python310\\python.exe',
+                // Anaconda/Miniconda
+                path.join(homeDir, 'anaconda3', 'python.exe'),
+                path.join(homeDir, 'miniconda3', 'python.exe'),
+                path.join(process.env.PROGRAMDATA || '', 'anaconda3', 'python.exe'),
+                path.join(process.env.PROGRAMDATA || '', 'miniconda3', 'python.exe'),
+            ];
+        case 'darwin':
+            // macOS: Homebrew (Apple Silicon & Intel), pyenv, system Python
+            return [
+                // Command-line (will use PATH)
+                'python3',
+                'python',
+                // Homebrew on Apple Silicon
+                '/opt/homebrew/bin/python3',
+                '/opt/homebrew/bin/python3.13',
+                '/opt/homebrew/bin/python3.12',
+                '/opt/homebrew/bin/python3.11',
+                // Homebrew on Intel Mac
+                '/usr/local/bin/python3',
+                '/usr/local/bin/python3.13',
+                '/usr/local/bin/python3.12',
+                '/usr/local/bin/python3.11',
+                // pyenv
+                path.join(homeDir, '.pyenv', 'shims', 'python'),
+                path.join(homeDir, '.pyenv', 'shims', 'python3'),
+                // macOS system Python (available since macOS 12.3+)
+                '/usr/bin/python3',
+                // Anaconda/Miniconda
+                path.join(homeDir, 'anaconda3', 'bin', 'python'),
+                path.join(homeDir, 'miniconda3', 'bin', 'python'),
+                '/opt/anaconda3/bin/python',
+                '/opt/miniconda3/bin/python',
+            ];
+        case 'linux':
+        default:
+            // Linux: System Python, pyenv, user installs
+            return [
+                // Command-line (will use PATH)
+                'python3',
+                'python',
+                // System Python locations
+                '/usr/bin/python3',
+                '/usr/bin/python',
+                '/usr/local/bin/python3',
+                '/usr/local/bin/python',
+                // pyenv
+                path.join(homeDir, '.pyenv', 'shims', 'python'),
+                path.join(homeDir, '.pyenv', 'shims', 'python3'),
+                // User local bin (pip install --user)
+                path.join(homeDir, '.local', 'bin', 'python3'),
+                path.join(homeDir, '.local', 'bin', 'python'),
+                // Anaconda/Miniconda
+                path.join(homeDir, 'anaconda3', 'bin', 'python'),
+                path.join(homeDir, 'miniconda3', 'bin', 'python'),
+                '/opt/anaconda3/bin/python',
+                '/opt/miniconda3/bin/python',
+            ];
+    }
+}
+/**
+ * Auto-detect Python executable path that has vishwa installed.
+ *
+ * Priority order:
+ * 1. User-configured path (always respected)
+ * 2. System/global Python with vishwa installed
+ * 3. VS Code workspace Python with vishwa installed
+ * 4. Any available Python (will show clear error about missing vishwa)
+ *
+ * Works on Windows, macOS, and Linux.
  */
 async function detectPythonPath() {
-    // 1. Check if user has explicitly configured a path
+    const candidates = [];
+    const checkedPaths = new Set();
+    // Helper to add unique candidates
+    const addCandidate = (pythonPath) => {
+        if (pythonPath && !checkedPaths.has(pythonPath)) {
+            checkedPaths.add(pythonPath);
+            if (pythonExists(pythonPath)) {
+                candidates.push(pythonPath);
+            }
+        }
+    };
+    // 1. Check if user has explicitly configured a path (highest priority)
     const config = vscode.workspace.getConfiguration('vishwa.autocomplete');
     const configuredPath = config.get('pythonPath', '');
     if (configuredPath && configuredPath !== 'python' && configuredPath !== 'auto') {
-        // User has set a custom path, validate it exists
-        if (fs.existsSync(configuredPath)) {
+        if (fs.existsSync(configuredPath) || pythonExists(configuredPath)) {
+            // User explicitly configured - use it directly
             return configuredPath;
         }
     }
-    // 2. Try to get Python path from VS Code Python extension
+    // 2. Add platform-specific Python candidates (system/global installs)
+    const platformCandidates = getPlatformPythonCandidates();
+    for (const pythonPath of platformCandidates) {
+        addCandidate(pythonPath);
+    }
+    // 3. Try to get Python path from VS Code Python extension (workspace interpreter)
     const pythonExtension = vscode.extensions.getExtension('ms-python.python');
     if (pythonExtension) {
         if (!pythonExtension.isActive) {
@@ -65,68 +206,41 @@ async function detectPythonPath() {
         }
         try {
             const pythonApi = pythonExtension.exports;
+            let workspacePython;
             if (pythonApi?.settings?.getExecutionDetails) {
                 const details = pythonApi.settings.getExecutionDetails(vscode.workspace.workspaceFolders?.[0]?.uri);
                 if (details?.execCommand?.[0]) {
-                    return details.execCommand[0];
+                    workspacePython = details.execCommand[0];
                 }
             }
             // Alternative API for newer versions
-            if (pythonApi?.environments?.getActiveEnvironmentPath) {
+            if (!workspacePython && pythonApi?.environments?.getActiveEnvironmentPath) {
                 const envPath = await pythonApi.environments.getActiveEnvironmentPath();
                 if (envPath?.path) {
-                    return envPath.path;
+                    workspacePython = envPath.path;
                 }
+            }
+            if (workspacePython) {
+                addCandidate(workspacePython);
             }
         }
         catch {
             // Ignore errors from Python extension API
         }
     }
-    // 3. Try common Python commands
-    const pythonCommands = process.platform === 'win32'
-        ? ['python', 'python3', 'py']
-        : ['python3', 'python'];
-    for (const cmd of pythonCommands) {
-        try {
-            const result = cp.spawnSync(cmd, ['--version'], {
-                encoding: 'utf8',
-                timeout: 5000,
-                shell: process.platform === 'win32'
-            });
-            if (result.status === 0) {
-                return cmd;
-            }
-        }
-        catch {
-            // Command not found, try next
-        }
-    }
-    // 4. Check common installation paths
-    const commonPaths = process.platform === 'win32'
-        ? [
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python311', 'python.exe'),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python310', 'python.exe'),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python39', 'python.exe'),
-            path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python312', 'python.exe'),
-            'C:\\Python311\\python.exe',
-            'C:\\Python310\\python.exe',
-            'C:\\Python39\\python.exe',
-            'C:\\Python312\\python.exe',
-        ]
-        : [
-            '/usr/bin/python3',
-            '/usr/local/bin/python3',
-            '/opt/homebrew/bin/python3',
-            '/usr/bin/python',
-        ];
-    for (const pythonPath of commonPaths) {
-        if (fs.existsSync(pythonPath)) {
+    // 4. Find the first Python that has vishwa installed
+    for (const pythonPath of candidates) {
+        if (hasVishwaInstalled(pythonPath)) {
             return pythonPath;
         }
     }
-    // 5. Fallback to 'python' and hope for the best
-    return 'python';
+    // 5. No Python with vishwa found - return first available Python
+    // The service will fail with a clear error about missing vishwa module
+    if (candidates.length > 0) {
+        return candidates[0];
+    }
+    // 6. Last resort fallback
+    return process.platform === 'win32' ? 'python' : 'python3';
 }
 class VishwaClient {
     constructor(outputChannel) {
@@ -227,13 +341,13 @@ class VishwaClient {
             this.pendingRequests.set(id, { resolve, reject });
             const requestJson = JSON.stringify(request) + '\n';
             this.process.stdin.write(requestJson);
-            // Set timeout
+            // Set timeout (15s for warm Ollama models - first request may be slower)
             setTimeout(() => {
                 if (this.pendingRequests.has(id)) {
                     this.pendingRequests.delete(id);
                     reject(new Error('Request timeout'));
                 }
-            }, 10000); // 10 second timeout
+            }, 15000);
         });
     }
     async ping() {

@@ -66,6 +66,14 @@
         "gemma3:4b": {
           "name": "gemma3:4b",
           "description": "Google Gemma 3 4B - Lightweight local model"
+        },
+        "qwen2.5coder7b":{
+          "name": "qwen2.5-coder:7b",
+          "description": "qwen medium weight coding model for fast auto-complete"
+        },
+        "qwen2.5coder3b":{
+          "name": "qwen2.5-coder:3b",
+          "description": "qwen medium weight coding model for fast auto-complete"
         }
       }
     },
