@@ -64,9 +64,9 @@
         },
         "vishwa.autocomplete.debounceDelay": {
           "type": "number",
-          "default": 200,
-          "description": "Milliseconds to wait after typing before requesting suggestion",
-          "minimum": 50,
+          "default": 500,
+          "description": "Milliseconds to wait after typing before requesting suggestion (higher = fewer API calls)",
+          "minimum": 100,
           "maximum": 2000
         },
         "vishwa.autocomplete.contextLines": {

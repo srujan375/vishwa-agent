@@ -160,6 +160,41 @@ else
     exit 1
 fi
 
+# Add vishwa to PATH for global access
+print_step "Setting up global 'vishwa' command..."
+
+# Determine shell config file
+SHELL_CONFIG=""
+if [ -n "$ZSH_VERSION" ] || [ "$SHELL" = "/bin/zsh" ] || [ "$SHELL" = "/usr/bin/zsh" ]; then
+    SHELL_CONFIG="$HOME/.zshrc"
+elif [ -n "$BASH_VERSION" ] || [ "$SHELL" = "/bin/bash" ] || [ "$SHELL" = "/usr/bin/bash" ]; then
+    # Prefer .bashrc for interactive shells, but check if .bash_profile exists
+    if [ -f "$HOME/.bashrc" ]; then
+        SHELL_CONFIG="$HOME/.bashrc"
+    elif [ -f "$HOME/.bash_profile" ]; then
+        SHELL_CONFIG="$HOME/.bash_profile"
+    else
+        SHELL_CONFIG="$HOME/.bashrc"
+    fi
+else
+    # Fallback to .profile for other shells
+    SHELL_CONFIG="$HOME/.profile"
+fi
+
+PATH_EXPORT="export PATH=\"\$HOME/.vishwa/venv/bin:\$PATH\""
+PATH_COMMENT="# Vishwa CLI - added by install script"
+
+# Check if already added
+if grep -q "\.vishwa/venv/bin" "$SHELL_CONFIG" 2>/dev/null; then
+    print_success "PATH already configured in $SHELL_CONFIG"
+else
+    echo "" >> "$SHELL_CONFIG"
+    echo "$PATH_COMMENT" >> "$SHELL_CONFIG"
+    echo "$PATH_EXPORT" >> "$SHELL_CONFIG"
+    print_success "Added vishwa to PATH in $SHELL_CONFIG"
+    NEED_SOURCE=true
+fi
+
 # Create .env template if it doesn't exist
 ENV_FILE="$VISHWA_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
@@ -185,6 +220,19 @@ echo ""
 echo "========================================"
 echo "   Installation Complete"
 echo "========================================"
+echo ""
+
+# Show source command if PATH was just added
+if [ "$NEED_SOURCE" = "true" ]; then
+    print_step "To use 'vishwa' command immediately, run:"
+    echo ""
+    echo "     source $SHELL_CONFIG"
+    echo ""
+    echo "  Or open a new terminal window."
+    echo ""
+fi
+
+echo "The 'vishwa' command is now available globally!"
 echo ""
 echo "Next steps:"
 echo ""
