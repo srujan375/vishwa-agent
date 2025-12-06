@@ -96,7 +96,7 @@ if ((Test-Path "pyproject.toml") -and (Select-String -Path "pyproject.toml" -Pat
     # Install from GitHub or PyPI
     Write-Step "Installing from GitHub..."
     try {
-        & $pip install git+https://github.com/SrujanArjun/Vishwa.git -q 2>$null
+        & $pip install git+https://github.com/srujan375/Vishwa.git -q 2>$null
     } catch {
         Write-Warning "Failed to install from GitHub. Trying PyPI..."
         try {

@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vishwa - AI-Powered Coding Assistant</title>
+    <meta name="description" content="Vishwa is an open-source AI-powered terminal coding assistant with VS Code integration. Built for developers who want intelligent code assistance.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="logo">
+                <img src="logo-simple.svg" alt="Vishwa" class="logo-icon">
+                <span class="logo-text">Vishwa</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#autocomplete">Autocomplete</a>
+                <a href="#install">Install</a>
+                <a href="https://github.com/srujan375/Vishwa" target="_blank" class="nav-github">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    GitHub
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-container">
+            <h1 class="hero-title">
+                Own your <span class="word-rotate" id="word-rotate">AI</span>
+            </h1>
+            <p class="hero-subtitle">
+                Vishwa is an AI-powered terminal coding assistant that thinks, reasons, and acts.
+                Named after Vishwakarma, the divine architect, it brings intelligent code assistance
+                right to your terminal and VS Code.
+            </p>
+            <div class="hero-cta">
+                <a href="#install" class="btn btn-primary">Get Started</a>
+                <a href="https://github.com/srujan375/Vishwa" target="_blank" class="btn btn-secondary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                    </svg>
+                    View on GitHub
+                </a>
+            </div>
+            <div class="hero-terminal">
+                <div class="terminal-header">
+                    <div class="terminal-buttons">
+                        <span class="terminal-btn red"></span>
+                        <span class="terminal-btn yellow"></span>
+                        <span class="terminal-btn green"></span>
+                    </div>
+                    <span class="terminal-title">Terminal</span>
+                </div>
+                <div class="terminal-body">
+                    <!-- Input Section -->
+                    <div class="terminal-banner">
+                        <span class="banner-title">Vishwa</span> - Agentic Coding Assistant<br>
+                        <span class="banner-meta">Model: zai/glm-4.6 | Context: 0 files</span>
+                    </div>
+                    <div class="terminal-info">
+                        Working directory: ~/projects/my-app<br>
+                        Type <span class="terminal-highlight">/help</span> for commands or start chatting
+                    </div>
+                    <div class="terminal-line">
+                        <span class="terminal-prompt">&gt;</span>
+                        <span class="terminal-command">Explain to me how vishwa works</span>
+                    </div>
+
+                    <!-- Output Section -->
+                    <div class="terminal-response">
+                        <p class="response-text">Vishwa is an AI-powered coding assistant with two main components: a terminal agent and VS Code autocomplete functionality. Here's how it works:</p>
+
+                        <h3 class="response-heading">Architecture Overview</h3>
+
+                        <p class="response-text"><strong>Vishwa</strong> (named after Vishwakarma, the Hindu god of engineering) operates as a dual-purpose coding assistant:</p>
+
+                        <h4 class="response-subheading">1. Terminal Agent (<span class="code-highlight">vishwa</span> command)</h4>
+
+                        <div class="response-bullets">
+                            <p><span class="bullet">•</span> <span class="list-label">ReAct Agent Loop:</span> Uses a reasoning-acting cycle to break down complex tasks</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Multi-LLM Support:</span> Supports Claude, GPT-4, Ollama (local), and Novita providers</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Core Tools:</span> Bash, file operations (read/write/edit), git operations, web search</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Configuration:</span> Managed through <span class="code-highlight">~/.vishwa/.env</span> file with model selection</p>
+                        </div>
+
+                        <h4 class="response-subheading">2. VS Code Autocomplete Extension</h4>
+
+                        <div class="response-bullets">
+                            <p><span class="bullet">•</span> <span class="list-label">Background Service:</span> Runs as a Python service communicating via JSON-RPC over stdio</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Real-time Suggestions:</span> Provides AI-powered code completions as you type</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Caching System:</span> Uses LRU cache with TTL for performance (100 suggestions, 5min TTL)</p>
+                            <p><span class="bullet">•</span> <span class="list-label">Context Awareness:</span> Analyzes surrounding code to provide relevant suggestions</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="features-container">
+            <div class="section-header">
+                <h2>Intelligent Coding Assistant</h2>
+                <p>Vishwa combines the power of multiple AI models with a sophisticated tool ecosystem to help you code smarter, not harder.</p>
+            </div>
+
+            <div class="features-grid">
+                <!-- Feature 1: ReAct Loop -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <h3>ReAct Reasoning</h3>
+                    <p>Think, act, observe, repeat. Vishwa uses the ReAct pattern to iteratively solve complex problems with up to 15 reasoning iterations per task.</p>
+                </div>
+
+                <!-- Feature 2: Multi-LLM -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="7.5 4.21 12 6.81 16.5 4.21"/>
+                            <polyline points="7.5 19.79 7.5 14.6 3 12"/>
+                            <polyline points="21 12 16.5 14.6 16.5 19.79"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                    </div>
+                    <h3>Multi-LLM Support</h3>
+                    <p>Use Claude Sonnet 4.5, GPT-5.1, or open-source models like Kimi K2 and GLM-4.6 via Novita. Switch seamlessly with intelligent fallback chains.</p>
+                </div>
+
+                <!-- Feature 3: VS Code -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="16 18 22 12 16 6"/>
+                            <polyline points="8 6 2 12 8 18"/>
+                        </svg>
+                    </div>
+                    <h3>VS Code Autocomplete</h3>
+                    <p>Ultra-fast suggestions with &lt;100ms latency. Context-aware completions that understand your code structure as you type.</p>
+                </div>
+
+                <!-- Feature 4: Tools -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                        </svg>
+                    </div>
+                    <h3>11+ Specialized Tools</h3>
+                    <p>File operations, git commands, code analysis, web search, and more. Vishwa has the tools to handle any coding task.</p>
+                </div>
+
+                <!-- Feature 5: Privacy -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <h3>Privacy First</h3>
+                    <p>Run entirely local with Ollama models. Your code never leaves your machine when you choose privacy-first mode.</p>
+                </div>
+
+                <!-- Feature 6: Safety -->
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            <polyline points="9 12 11 14 15 10"/>
+                        </svg>
+                    </div>
+                    <h3>Safe by Design</h3>
+                    <p>User approval for file changes, surgical string replacements, and git integration for easy rollback. Your code is protected.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works">
+        <div class="how-container">
+            <div class="section-header">
+                <h2>How Vishwa Works</h2>
+                <p>A sophisticated agentic loop that thinks before it acts</p>
+            </div>
+
+            <div class="workflow">
+                <div class="workflow-step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>You Ask</h3>
+                        <p>Describe what you want to accomplish in natural language</p>
+                    </div>
+                </div>
+                <div class="workflow-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Vishwa Thinks</h3>
+                        <p>AI analyzes your codebase and plans the approach</p>
+                    </div>
+                </div>
+                <div class="workflow-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Tools Execute</h3>
+                        <p>Specialized tools read, analyze, and modify your code</p>
+                    </div>
+                </div>
+                <div class="workflow-arrow">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="5" y1="12" x2="19" y2="12"/>
+                        <polyline points="12 5 19 12 12 19"/>
+                    </svg>
+                </div>
+                <div class="workflow-step">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>You Review</h3>
+                        <p>Approve changes and iterate until satisfied</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- VS Code Autocomplete Section -->
+    <section class="autocomplete" id="autocomplete">
+        <div class="autocomplete-container">
+            <div class="section-header">
+                <h2>VS Code Autocomplete</h2>
+                <p>AI-powered code completions that understand your codebase</p>
+            </div>
+
+            <div class="autocomplete-content">
+                <div class="autocomplete-features">
+                    <div class="ac-feature">
+                        <div class="ac-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                            </svg>
+                        </div>
+                        <div class="ac-text">
+                            <h4>Ultra-Fast</h4>
+                            <p>&lt;100ms latency with local models, smart caching delivers 50-70% cache hit rates</p>
+                        </div>
+                    </div>
+
+                    <div class="ac-feature">
+                        <div class="ac-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </div>
+                        <div class="ac-text">
+                            <h4>Context-Aware</h4>
+                            <p>Analyzes surrounding code, imports, and file structure for relevant suggestions</p>
+                        </div>
+                    </div>
+
+                    <div class="ac-feature">
+                        <div class="ac-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                                <line x1="8" y1="21" x2="16" y2="21"/>
+                                <line x1="12" y1="17" x2="12" y2="21"/>
+                            </svg>
+                        </div>
+                        <div class="ac-text">
+                            <h4>Always-On Mode</h4>
+                            <p>Ghost text suggestions appear automatically as you type - Tab to accept, Esc to dismiss</p>
+                        </div>
+                    </div>
+
+                    <div class="ac-feature">
+                        <div class="ac-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="16 18 22 12 16 6"/>
+                                <polyline points="8 6 2 12 8 18"/>
+                            </svg>
+                        </div>
+                        <div class="ac-text">
+                            <h4>Multi-Language</h4>
+                            <p>Python, JavaScript, TypeScript, Go, Rust, and more - works with any language</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="autocomplete-demo">
+                    <div class="editor-window">
+                        <div class="editor-header">
+                            <div class="editor-tabs">
+                                <span class="editor-tab active">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                        <path d="M14.25.18l.9.2.73.26.59.3.45.32.34.34.25.34.16.33.1.3.04.26.02.2-.01.13V8.5l-.05.63-.13.55-.21.46-.26.38-.3.31-.33.25-.35.19-.35.14-.33.1-.3.07-.26.04-.21.02H8.77l-.69.05-.59.14-.5.22-.41.27-.33.32-.27.35-.2.36-.15.37-.1.35-.07.32-.04.27-.02.21v3.06H3.17l-.21-.03-.28-.07-.32-.12-.35-.18-.36-.26-.36-.36-.35-.46-.32-.59-.28-.73-.21-.88-.14-1.05-.05-1.23.06-1.22.16-1.04.24-.87.32-.71.36-.57.4-.44.42-.33.42-.24.4-.16.36-.1.32-.05.24-.01h.16l.06.01h8.16v-.83H6.18l-.01-2.75-.02-.37.05-.34.11-.31.17-.28.25-.26.31-.23.38-.2.44-.18.51-.15.58-.12.64-.1.71-.06.77-.04.84-.02 1.27.05zm-6.3 1.98l-.23.33-.08.41.08.41.23.34.33.22.41.09.41-.09.33-.22.23-.34.08-.41-.08-.41-.23-.33-.33-.22-.41-.09-.41.09zm13.09 3.95l.28.06.32.12.35.18.36.27.36.35.35.47.32.59.28.73.21.88.14 1.04.05 1.23-.06 1.23-.16 1.04-.24.86-.32.71-.36.57-.4.45-.42.33-.42.24-.4.16-.36.09-.32.05-.24.02-.16-.01h-8.22v.82h5.84l.01 2.76.02.36-.05.34-.11.31-.17.29-.25.25-.31.24-.38.2-.44.17-.51.15-.58.13-.64.09-.71.07-.77.04-.84.01-1.27-.04-1.07-.14-.9-.2-.73-.25-.59-.3-.45-.33-.34-.34-.25-.34-.16-.33-.1-.3-.04-.25-.02-.2.01-.13v-5.34l.05-.64.13-.54.21-.46.26-.38.3-.32.33-.24.35-.2.35-.14.33-.1.3-.06.26-.04.21-.02.13-.01h5.84l.69-.05.59-.14.5-.21.41-.28.33-.32.27-.35.2-.36.15-.36.1-.35.07-.32.04-.28.02-.21V6.07h2.09l.14.01zm-6.47 14.25l-.23.33-.08.41.08.41.23.33.33.23.41.08.41-.08.33-.23.23-.33.08-.41-.08-.41-.23-.33-.33-.23-.41-.08-.41.08z"/>
+                                    </svg>
+                                    app.py
+                                </span>
+                            </div>
+                        </div>
+                        <div class="editor-body">
+                            <div class="code-line"><span class="line-num">1</span><span class="code-keyword">from</span> flask <span class="code-keyword">import</span> Flask, request</div>
+                            <div class="code-line"><span class="line-num">2</span><span class="code-keyword">from</span> datetime <span class="code-keyword">import</span> datetime</div>
+                            <div class="code-line"><span class="line-num">3</span></div>
+                            <div class="code-line"><span class="line-num">4</span>app = Flask(__name__)</div>
+                            <div class="code-line"><span class="line-num">5</span></div>
+                            <div class="code-line"><span class="line-num">6</span><span class="code-decorator">@app.route</span>(<span class="code-string">'/api/users'</span>)</div>
+                            <div class="code-line"><span class="line-num">7</span><span class="code-keyword">def</span> <span class="code-function">get_users</span>():</div>
+                            <div class="code-line active-line"><span class="line-num">8</span>    <span class="ghost-text">return jsonify({'users': [], 'timestamp': datetime.now().isoformat()})</span></div>
+                            <div class="code-line"><span class="line-num">9</span></div>
+                        </div>
+                        <div class="editor-footer">
+                            <span class="ghost-hint">Press <kbd>Tab</kbd> to accept  <kbd>Esc</kbd> to dismiss</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="autocomplete-architecture">
+                <h3>How It Works</h3>
+                <div class="arch-flow">
+                    <div class="arch-step">
+                        <span class="arch-label">VS Code</span>
+                        <span class="arch-desc">TypeScript Extension</span>
+                    </div>
+                    <div class="arch-arrow">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                            <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                        <span>JSON-RPC</span>
+                    </div>
+                    <div class="arch-step">
+                        <span class="arch-label">Python Service</span>
+                        <span class="arch-desc">Context Builder + Cache</span>
+                    </div>
+                    <div class="arch-arrow">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                            <polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                        <span>API</span>
+                    </div>
+                    <div class="arch-step">
+                        <span class="arch-label">LLM</span>
+                        <span class="arch-desc">Claude / GPT / Ollama</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Models Section -->
+    <section class="models">
+        <div class="models-container">
+            <div class="section-header">
+                <h2>Your Choice of AI</h2>
+                <p>Use the best model for your task, or run completely offline</p>
+            </div>
+
+            <div class="models-grid">
+                <div class="model-category">
+                    <h3>Cloud Models</h3>
+                    <ul class="model-list">
+                        <li><span class="model-name">Claude Sonnet 4.5</span><span class="model-tag">Recommended</span></li>
+                        <li><span class="model-name">Claude Haiku 4.5</span><span class="model-tag">Fast</span></li>
+                        <li><span class="model-name">Claude Opus 4</span></li>
+                        <li><span class="model-name">GPT-5.1 Pro</span></li>
+                    </ul>
+                </div>
+                <div class="model-category">
+                    <h3>Local / Novita Models</h3>
+                    <ul class="model-list">
+                        <li><span class="model-name">Kimi K2 Thinking</span><span class="model-tag">Reasoning</span></li>
+                        <li><span class="model-name">DeepSeek V3.2</span></li>
+                        <li><span class="model-name">GLM-4.6</span></li>
+                        <li><span class="model-name">Qwen3 Next 80B</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section class="install" id="install">
+        <div class="install-container">
+            <div class="section-header">
+                <h2>Get Started in Seconds</h2>
+                <p>Choose your platform and start coding with AI</p>
+            </div>
+
+            <div class="install-tabs">
+                <button class="tab-btn active" data-tab="mac">macOS / Linux</button>
+                <button class="tab-btn" data-tab="windows">Windows</button>
+                <button class="tab-btn" data-tab="manual">Manual</button>
+            </div>
+
+            <div class="install-content">
+                <div class="tab-content active" id="mac">
+                    <div class="install-step">
+                        <span class="step-label">1. Clone and install</span>
+                        <div class="code-block">
+                            <code>git clone https://github.com/srujan375/Vishwa.git && cd Vishwa && ./install.sh</code>
+                            <button class="copy-btn" data-copy="git clone https://github.com/srujan375/Vishwa.git && cd Vishwa && ./install.sh">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">2. Set your API key</span>
+                        <div class="code-block">
+                            <code>export ANTHROPIC_API_KEY="your-key-here"</code>
+                            <button class="copy-btn" data-copy="export ANTHROPIC_API_KEY=&quot;your-key-here&quot;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">3. Start Vishwa</span>
+                        <div class="code-block">
+                            <code>vishwa "Explain this codebase"</code>
+                            <button class="copy-btn" data-copy="vishwa &quot;Explain this codebase&quot;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="windows">
+                    <div class="install-step">
+                        <span class="step-label">1. Clone and install (PowerShell)</span>
+                        <div class="code-block">
+                            <code>git clone https://github.com/srujan375/Vishwa.git; cd Vishwa; .\install.ps1</code>
+                            <button class="copy-btn" data-copy="git clone https://github.com/srujan375/Vishwa.git; cd Vishwa; .\install.ps1">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">2. Set your API key</span>
+                        <div class="code-block">
+                            <code>$env:ANTHROPIC_API_KEY="your-key-here"</code>
+                            <button class="copy-btn" data-copy="$env:ANTHROPIC_API_KEY=&quot;your-key-here&quot;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">3. Start Vishwa</span>
+                        <div class="code-block">
+                            <code>vishwa "Explain this codebase"</code>
+                            <button class="copy-btn" data-copy="vishwa &quot;Explain this codebase&quot;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-content" id="manual">
+                    <div class="install-step">
+                        <span class="step-label">1. Clone the repository</span>
+                        <div class="code-block">
+                            <code>git clone https://github.com/srujan375/Vishwa.git && cd Vishwa</code>
+                            <button class="copy-btn" data-copy="git clone https://github.com/srujan375/Vishwa.git && cd Vishwa">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">2. Create virtual environment</span>
+                        <div class="code-block">
+                            <code>python -m venv .venv && source .venv/bin/activate</code>
+                            <button class="copy-btn" data-copy="python -m venv .venv && source .venv/bin/activate">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="install-step">
+                        <span class="step-label">3. Install in editable mode</span>
+                        <div class="code-block">
+                            <code>pip install -e .</code>
+                            <button class="copy-btn" data-copy="pip install -e .">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="install-note">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <p>Want to use local models? Install <a href="https://ollama.ai" target="_blank">Ollama</a> and run <code>ollama pull gemma3:4b</code></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-container">
+            <div class="footer-content">
+                <div class="footer-logo">
+                    <img src="logo-simple.svg" alt="Vishwa" class="logo-icon">
+                    <span class="logo-text">Vishwa</span>
+                </div>
+                <p class="footer-tagline">Named after Vishwakarma, the divine architect</p>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/srujan375/Vishwa" target="_blank">GitHub</a>
+                <a href="https://github.com/srujan375/Vishwa/issues" target="_blank">Issues</a>
+                <a href="https://github.com/srujan375/Vishwa#readme" target="_blank">Documentation</a>
+            </div>
+            <div class="footer-bottom">
+                <p>Built with care by the open source community</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

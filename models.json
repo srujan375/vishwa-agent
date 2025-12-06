@@ -94,6 +94,10 @@
         "zai-org/glm-4.6": {
           "name": "zai-org/glm-4.6",
           "description": "GLM-4.6 via Novita - Advanced language model"
+        },
+        "qwen/qwen3-next-80b-a3b-instruct": {
+          "name": "qwen/qwen3-next-80b-a3b-instruct",
+          "description": "Qwen3 Next 80B A3B Instruct via Novita - Advanced Qwen model"
         }
       }
     }

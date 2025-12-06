@@ -140,7 +140,7 @@ else
     # Install from PyPI (when available) or GitHub
     # For now, install from GitHub
     print_step "Installing from GitHub..."
-    "$PIP" install git+https://github.com/SrujanArjun/Vishwa.git -q 2>/dev/null || {
+    "$PIP" install git+https://github.com/srujan375/Vishwa.git -q 2>/dev/null || {
         print_error "Failed to install from GitHub. Trying PyPI..."
         "$PIP" install vishwa -q 2>/dev/null || {
             print_error "Vishwa package not found. Please install manually."

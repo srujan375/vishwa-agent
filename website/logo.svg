@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <linearGradient id="chakraGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8b5cf6"/>
+      <stop offset="100%" style="stop-color:#c084fc"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="60" cy="60" r="56" fill="#0a0a0b" stroke="#27272a" stroke-width="1"/>
+
+  <!-- Code Chakra - angle brackets as spokes with glow -->
+  <g filter="url(#glow)" stroke="url(#chakraGrad)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- 8 bracket spokes radiating outward -->
+
+    <!-- Top -->
+    <path d="M 52 18 L 60 28 L 68 18" />
+
+    <!-- Top-right -->
+    <path d="M 88 28 L 82 40 L 96 36" />
+
+    <!-- Right -->
+    <path d="M 102 52 L 92 60 L 102 68" />
+
+    <!-- Bottom-right -->
+    <path d="M 96 84 L 82 80 L 88 92" />
+
+    <!-- Bottom -->
+    <path d="M 68 102 L 60 92 L 52 102" />
+
+    <!-- Bottom-left -->
+    <path d="M 24 84 L 38 80 L 32 92" />
+
+    <!-- Left -->
+    <path d="M 18 68 L 28 60 L 18 52" />
+
+    <!-- Top-left -->
+    <path d="M 32 28 L 38 40 L 24 36" />
+  </g>
+
+  <!-- Center hub -->
+  <circle cx="60" cy="60" r="12" fill="#0a0a0b" stroke="url(#chakraGrad)" stroke-width="3"/>
+  <circle cx="60" cy="60" r="5" fill="#c084fc"/>
+</svg>

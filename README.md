@@ -8,7 +8,7 @@ Named after Vishwakarma, the Hindu god of engineering and craftsmanship.
 
 - **Terminal Agent**: Interactive coding assistant with ReAct agent loop
 - **VS Code Autocomplete**: AI-powered code suggestions in your editor
-- **Multi-LLM Support**: Claude, GPT-4, Ollama (local models)
+- **Multi-LLM Support**: Claude, GPT-5, Ollama, Novita (local models)
 - **Privacy-First**: Run entirely locally with Ollama models
 - **Core Tools**: Bash, read, edit, write, git operations
 
@@ -23,7 +23,7 @@ Named after Vishwakarma, the Hindu god of engineering and craftsmanship.
 ### Setup
 
 ```bash
-git clone https://github.com/SrujanArjun/Vishwa.git
+git clone https://github.com/srujan375/Vishwa.git
 cd Vishwa
 
 # Linux / macOS
@@ -158,7 +158,7 @@ If this fails, re-run the install script.
 ### Cloud Models
 
 - claude-haiku-4-5: ~500-800ms
-- gpt-4o-mini: ~500-800ms
+- gpt-5-mini: ~500-800ms
 
 ## Documentation
 
