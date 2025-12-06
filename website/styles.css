@@ -704,6 +704,7 @@ a {
     display: flex;
     padding: 0 16px;
     min-height: 24px;
+    white-space: pre;
 }
 
 .code-line.active-line {
