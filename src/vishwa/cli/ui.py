@@ -14,20 +14,211 @@ import tempfile
 import atexit
 import shutil
 from pathlib import Path
-from rich.console import Console
+from rich.console import Console, Group
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm
 from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
+from rich.live import Live
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import radiolist_dialog, button_dialog
 from prompt_toolkit.styles import Style
 from prompt_toolkit.formatted_text import HTML
 
+# Cross-platform keyboard input
+import sys
+if sys.platform == 'win32':
+    import msvcrt
+else:
+    import tty
+    import termios
+
 # Global console instance
 console = Console()
+
+
+def _get_key():
+    """
+    Get a single keypress from the user (cross-platform).
+
+    Returns:
+        str: The key pressed ('left', 'right', 'enter', or the character)
+    """
+    if sys.platform == 'win32':
+        # Windows implementation
+        key = msvcrt.getch()
+        if key == b'\xe0':  # Arrow key prefix on Windows
+            key = msvcrt.getch()
+            if key == b'K':
+                return 'left'
+            elif key == b'M':
+                return 'right'
+            elif key == b'H':
+                return 'up'
+            elif key == b'P':
+                return 'down'
+        elif key == b'\r':
+            return 'enter'
+        elif key == b'\x03':  # Ctrl+C
+            raise KeyboardInterrupt
+        elif key == b'\x1b':  # Escape
+            return 'escape'
+        else:
+            try:
+                return key.decode('utf-8').lower()
+            except:
+                return ''
+    else:
+        # Unix implementation
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+            if ch == '\x1b':  # Escape sequence
+                ch2 = sys.stdin.read(1)
+                if ch2 == '[':
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == 'D':
+                        return 'left'
+                    elif ch3 == 'C':
+                        return 'right'
+                    elif ch3 == 'A':
+                        return 'up'
+                    elif ch3 == 'B':
+                        return 'down'
+                return 'escape'
+            elif ch == '\r' or ch == '\n':
+                return 'enter'
+            elif ch == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt
+            else:
+                return ch.lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+class InlineSelector:
+    """
+    An inline selector that stays in the terminal flow.
+
+    Features:
+    - Arrow key navigation (← →)
+    - Direct keyboard shortcuts
+    - Visual highlighting of selected option
+    - Doesn't take over the screen
+    """
+
+    def __init__(
+        self,
+        options: list,
+        title: str = "Select an option",
+        subtitle: str = None,
+    ):
+        """
+        Initialize the selector.
+
+        Args:
+            options: List of tuples (label, value, shortcut, color)
+                     e.g., [("Approve", "approve", "y", "green"), ...]
+            title: Title to show above options
+            subtitle: Optional subtitle/context
+        """
+        self.options = options
+        self.title = title
+        self.subtitle = subtitle
+        self.selected_index = 0
+
+    def _build_display(self) -> Panel:
+        """Build the Rich renderable for current state."""
+        lines = []
+
+        # Subtitle if provided
+        if self.subtitle:
+            lines.append(Text(self.subtitle, style="dim"))
+            lines.append(Text(""))
+
+        # Build options line
+        option_parts = []
+        for i, (label, value, shortcut, color) in enumerate(self.options):
+            if i == self.selected_index:
+                # Selected option - highlighted
+                option_parts.append(f"[bold black on cyan] {shortcut.upper()} [/bold black on cyan]")
+                option_parts.append(f"[bold {color}] {label} [/bold {color}]")
+            else:
+                # Unselected option
+                option_parts.append(f"[dim bold] {shortcut.upper()} [/dim bold]")
+                option_parts.append(f"[{color}] {label} [/{color}]")
+
+            if i < len(self.options) - 1:
+                option_parts.append("  [dim]│[/dim]  ")
+
+        options_text = Text.from_markup("".join(option_parts))
+        lines.append(options_text)
+
+        # Help text
+        lines.append(Text(""))
+        help_text = Text()
+        help_text.append("← → ", style="cyan bold")
+        help_text.append("navigate  ", style="dim")
+        help_text.append("Enter ", style="cyan bold")
+        help_text.append("select  ", style="dim")
+        help_text.append("or press ", style="dim")
+        shortcuts = "/".join(opt[2].upper() for opt in self.options)
+        help_text.append(shortcuts, style="cyan bold")
+        lines.append(help_text)
+
+        # Create panel
+        content = Group(*lines)
+        return Panel(
+            content,
+            title=f"[bold yellow]{self.title}[/bold yellow]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+
+    def run(self) -> str:
+        """
+        Run the selector and return the selected value.
+
+        Returns:
+            The value of the selected option
+        """
+        # Build shortcut map
+        shortcut_map = {opt[2].lower(): i for i, opt in enumerate(self.options)}
+
+        try:
+            with Live(self._build_display(), console=console, refresh_per_second=10, transient=True) as live:
+                while True:
+                    key = _get_key()
+
+                    if key == 'left':
+                        self.selected_index = (self.selected_index - 1) % len(self.options)
+                        live.update(self._build_display())
+
+                    elif key == 'right':
+                        self.selected_index = (self.selected_index + 1) % len(self.options)
+                        live.update(self._build_display())
+
+                    elif key == 'enter':
+                        # Return selected option
+                        return self.options[self.selected_index][1]
+
+                    elif key == 'escape':
+                        # Return last option (usually cancel)
+                        return self.options[-1][1]
+
+                    elif key in shortcut_map:
+                        # Direct shortcut pressed
+                        self.selected_index = shortcut_map[key]
+                        live.update(self._build_display())
+                        return self.options[self.selected_index][1]
+
+        except KeyboardInterrupt:
+            return self.options[-1][1]  # Return cancel/last option
 
 # Track temp directories for cleanup on exit
 _temp_dirs_to_cleanup = set()
@@ -421,9 +612,10 @@ def _show_diff_terminal(filepath: str, old: str, new: str) -> None:
 
 def confirm_action(message: str, default: bool = False) -> bool:
     """
-    Ask user to confirm an action with inline selection.
+    Ask user to confirm an action with an inline selector.
 
-    Simple inline prompt that doesn't take over the screen.
+    Clean, minimal inline UI for simple yes/no decisions.
+    Supports both arrow key navigation and direct shortcuts (Y/N).
     Automatically closes any open VS Code temp files after user choice.
 
     Args:
@@ -433,56 +625,46 @@ def confirm_action(message: str, default: bool = False) -> bool:
     Returns:
         True if confirmed
     """
-    from rich.prompt import Prompt
-
     try:
-        # Show the message with rich formatting
-        console.print(f"\n[bold yellow]{message}[/bold yellow]")
-
-        # Create inline prompt with styled options
-        console.print("[dim]Options:[/dim]")
-        console.print("  [green bold]y[/green bold] → Yes, approve and proceed")
-        console.print("  [red bold]n[/red bold] → No, reject this change")
         console.print()
 
-        # Get user input with validation
-        default_str = "y" if default else "n"
-        choices = ["y", "yes", "n", "no"]
+        # Create inline selector with Yes/No options
+        selector = InlineSelector(
+            options=[
+                ("Yes, proceed", True, "y", "green"),
+                ("No, cancel", False, "n", "red"),
+            ],
+            title="Confirm Action",
+            subtitle=message,
+        )
 
-        while True:
-            response = Prompt.ask(
-                "Your choice",
-                choices=["y", "n"],
-                default=default_str,
-                show_choices=False,
-                show_default=True
-            ).lower()
+        result = selector.run()
 
-            if response in ["y", "yes"]:
-                console.print("[green]Approved[/green]\n")
-                # Close VS Code temp files
-                close_vscode_temp_files()
-                return True
-            elif response in ["n", "no"]:
-                console.print("[red]Rejected[/red]\n")
-                # Close VS Code temp files
-                close_vscode_temp_files()
-                return False
-            else:
-                console.print(f"[yellow]Please enter 'y' or 'n'[/yellow]")
+        # Show confirmation message
+        if result:
+            console.print("[green]✓ Approved[/green]")
+        else:
+            console.print("[red]✗ Rejected[/red]")
+
+        console.print()
+
+        # Close VS Code temp files
+        close_vscode_temp_files()
+
+        return result if result is not None else False
 
     except (KeyboardInterrupt, EOFError):
         console.print("\n[yellow]Action cancelled[/yellow]")
-        # Close VS Code temp files on cancellation too
         close_vscode_temp_files()
         return False
 
 
 def confirm_file_change(filepath: str, action: str = "apply changes") -> str:
     """
-    Ask user to confirm file changes with multiple options.
+    Ask user to confirm file changes with an inline selector.
 
-    Uses arrow keys to navigate and Enter to select.
+    Uses arrow keys to navigate and Enter to select, or direct shortcuts.
+    Stays inline in the terminal - doesn't take over the screen.
 
     Args:
         filepath: Path to the file being modified
@@ -492,31 +674,46 @@ def confirm_file_change(filepath: str, action: str = "apply changes") -> str:
         One of: 'approve', 'reject', 'edit', 'cancel'
     """
     try:
-        style = Style.from_dict({
-            'dialog': 'bg:#1e1e1e',
-            'dialog.body': 'bg:#1e1e1e #ffffff',
-            'dialog shadow': 'bg:#000000',
-            'button': 'bg:#4a4a4a #ffffff',
-            'button.focused': 'bg:#0078d4 #ffffff bold',
-            'button.arrow': '#ffffff',
-        })
+        console.print()
 
-        result = button_dialog(
-            title=f'📝 {action.title()}',
-            text=f"File: {filepath}\n\nWhat would you like to do?",
-            buttons=[
-                ('✓ Approve', 'approve'),
-                ('✗ Reject', 'reject'),
-                ('✎ Edit First', 'edit'),
-                ('⊗ Cancel', 'cancel'),
+        # Show file context
+        console.print(f"[dim]File:[/dim] [bold white]{filepath}[/bold white]")
+        console.print()
+
+        # Create inline selector with all options
+        selector = InlineSelector(
+            options=[
+                ("Approve", "approve", "y", "green"),
+                ("Reject", "reject", "n", "red"),
+                ("Edit", "edit", "e", "yellow"),
+                ("Cancel", "cancel", "c", "dim"),
             ],
-            style=style,
-        ).run()
+            title=f"Approval Required",
+            subtitle=f"Action: {action.title()}",
+        )
+
+        result = selector.run()
+
+        # Show confirmation message
+        if result == 'approve':
+            console.print("[green]✓ Changes approved[/green]")
+        elif result == 'reject':
+            console.print("[red]✗ Changes rejected[/red]")
+        elif result == 'edit':
+            console.print("[yellow]✎ Opening for edit[/yellow]")
+        else:
+            console.print("[dim]⊗ Cancelled[/dim]")
+
+        console.print()
+
+        # Close VS Code temp files
+        close_vscode_temp_files()
 
         return result if result else 'cancel'
 
     except (KeyboardInterrupt, EOFError):
         console.print("\n[yellow]Action cancelled[/yellow]")
+        close_vscode_temp_files()
         return 'cancel'
 
 

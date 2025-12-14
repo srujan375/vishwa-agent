@@ -214,6 +214,10 @@ class VishwaLogger:
     def context_clear(self):
         self._log('info', 'CONTEXT', "Context cleared")
 
+    def context_files_compressed(self, num_files: int, tokens_saved: int):
+        self._log('info', 'CONTEXT', f"Compressed {num_files} files (saved ~{tokens_saved:,} tokens)",
+                  files_compressed=num_files, tokens_saved=tokens_saved)
+
     # === ERRORS & WARNINGS ===
 
     def error(self, component: str, message: str, exception: Optional[Exception] = None):

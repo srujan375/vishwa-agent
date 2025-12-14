@@ -35,14 +35,18 @@ from vishwa.config import Config
 
 # Color scheme
 STYLE = Style.from_dict({
-    'prompt': '#00d7ff bold',      # Cyan prompt
-    'context': '#00d7ff',          # Cyan context indicator
-    'command': '#00d7ff',          # Cyan commands
-    'success': '#00ff00',          # Green success
-    'error': '#ff5555',            # Red errors
-    'info': '#5f87ff',             # Blue info
-    'secondary': 'ansibrightblack',  # Dim gray metadata
-    'separator': 'ansibrightblack',  # Dim gray separators
+    # Prompt styling - more prominent
+    'prompt': '#00d7ff bold',           # Cyan prompt symbol
+    'prompt-symbol': '#00d7ff bold',    # Bold cyan for main symbol
+    'context': '#8b5cf6 bold',          # Purple for file count
+    'model': '#22c55e',                 # Green for model indicator
+    'command': '#00d7ff',               # Cyan commands
+    'success': '#00ff00',               # Green success
+    'error': '#ff5555',                 # Red errors
+    'info': '#5f87ff',                  # Blue info
+    'secondary': 'ansibrightblack',     # Dim gray metadata
+    'separator': 'ansibrightblack',     # Dim gray separators
+    'input-border': '#00d7ff',          # Cyan border for input area
 
     # Completion menu styling (for autocomplete dropdown)
     'completion-menu': 'bg:#1a1a1a #ffffff',  # Dark background, white text
@@ -50,6 +54,11 @@ STYLE = Style.from_dict({
     'completion-menu.completion.current': 'bg:#00d7ff #000000 bold',  # Selected: cyan bg, black text, bold
     'completion-menu.meta': 'bg:#1a1a1a #808080',  # Metadata: gray text
     'completion-menu.meta.current': 'bg:#00d7ff #000000',  # Selected meta: black text on cyan
+
+    # Bottom toolbar styling
+    'bottom-toolbar': 'bg:#1a1a2e #888888',
+    'bottom-toolbar.text': '#888888',
+    'bottom-toolbar.key': '#00d7ff bold',
 })
 
 
@@ -214,13 +223,34 @@ class InteractiveSession:
         Returns:
             User input string
         """
-        # Show context indicator if files are tracked
+        # Build a visually prominent prompt
         files_count = len(self.agent.context.files_in_context)
+        model_name = getattr(self.agent.llm, 'model_name', 'default')
 
+        # Shorten model name for display
+        short_model = model_name.split('/')[-1]  # Remove provider prefix if any
+        if len(short_model) > 20:
+            short_model = short_model[:17] + "..."
+
+        # Build prompt with visual hierarchy
+        # Format: ╭─ vishwa ──────────────────────────────────
+        #         │ model: claude-sonnet | files: 3
+        #         ╰─▶
+
+        # Show a visual separator line before prompt
+        self.console.print()
+        self.console.print("[cyan]╭─[/cyan] [bold white]vishwa[/bold white] [cyan]" + "─" * 40 + "[/cyan]")
+
+        # Status line with model and context
+        status_parts = []
+        status_parts.append(f"[dim]model:[/dim] [green]{short_model}[/green]")
         if files_count > 0:
-            prompt_text = HTML(f'<context>[{files_count} files]</context> <prompt>&gt;</prompt> ')
-        else:
-            prompt_text = HTML('<prompt>&gt;</prompt> ')
+            status_parts.append(f"[dim]files:[/dim] [#8b5cf6]{files_count}[/#8b5cf6]")
+        status_line = " [dim]│[/dim] ".join(status_parts)
+        self.console.print(f"[cyan]│[/cyan] {status_line}")
+
+        # The actual input prompt with arrow
+        prompt_text = HTML('<prompt-symbol>╰─▶</prompt-symbol> ')
 
         return self.prompt_session.prompt(prompt_text)
 

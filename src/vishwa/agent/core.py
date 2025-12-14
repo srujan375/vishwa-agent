@@ -50,7 +50,7 @@ class VishwaAgent:
         max_iterations: Optional[int] = None,
         auto_approve: bool = False,
         verbose: bool = True,
-        loop_detection_threshold: int = 15,
+        loop_detection_threshold: int = 30,
     ):
         """
         Initialize Vishwa agent.
@@ -216,10 +216,16 @@ class VishwaAgent:
                     # Add to context
                     self.context.add_tool_result(tool_call, result)
 
-                # Step 4: Prune context if needed
+                # Step 4: Compress files and tool results (token optimization)
+                # After the LLM has seen content, we replace with compact summaries.
+                # Modified files keep full content. Recent read_file results kept intact.
+                self.context.compress_unmodified_files()
+                self.context.compress_old_tool_results(keep_recent=3)
+
+                # Step 5: Prune context if still approaching limit
                 self.context.prune_if_needed()
 
-                # Step 5: Check stopping conditions
+                # Step 6: Check stopping conditions
                 if self._should_stop():
                     logger.agent_decision("stop", f"stopping condition met: {self.stop_reason}")
                     return self._finalize_success("Stopping conditions met")

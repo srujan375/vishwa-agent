@@ -6,12 +6,14 @@ Manages:
 - Files currently in context
 - Modifications made during session
 - Context pruning when approaching token limits
+- Proactive file compression after LLM reads
 """
 
 import json
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
 
 from vishwa.llm.response import ToolCall
 from vishwa.tools.base import ToolResult
@@ -133,11 +135,15 @@ class ContextManager:
             ],
         )
 
-        # Add tool result message
+        # Add tool result message with metadata for later compression
         self.add_message(
             role="tool",
             content=str(result),
             tool_call_id=tool_call.id,
+            metadata={
+                "tool_name": tool_call.name,
+                "arguments": tool_call.arguments,
+            },
         )
 
         # Track in recent outputs
@@ -310,6 +316,241 @@ class ContextManager:
         current = self.estimate_tokens()
         limit = self.max_tokens * threshold
         return current > limit
+
+    def compress_unmodified_files(self) -> int:
+        """
+        Compress files that have been read but not modified.
+
+        After the LLM has seen a file once, we replace the full content
+        with a compact structure summary. This dramatically reduces token
+        usage while preserving the important information.
+
+        Modified files are kept intact (we need full content for those).
+
+        Returns:
+            Number of tokens saved (estimated)
+        """
+        # Get paths of modified files - these should keep full content
+        modified_paths: Set[str] = {mod.file_path for mod in self.modifications}
+
+        tokens_saved = 0
+        files_compressed = []
+
+        for path, content in list(self.files_in_context.items()):
+            # Skip if this file was modified
+            if path in modified_paths:
+                continue
+
+            # Skip if already compressed (contains our summary marker)
+            if content.startswith("[FILE SUMMARY]"):
+                continue
+
+            # Skip small files (not worth compressing)
+            if len(content) < 500:  # ~125 tokens
+                continue
+
+            try:
+                # Create compact summary using SmartFileReader
+                summary = self._create_file_summary(path, content)
+
+                # Calculate tokens saved
+                old_tokens = len(content) // 4  # Rough estimate
+                new_tokens = len(summary) // 4
+                tokens_saved += (old_tokens - new_tokens)
+
+                # Replace full content with summary
+                self.files_in_context[path] = summary
+                files_compressed.append(path)
+
+            except Exception:
+                # If summarization fails, keep the original content
+                continue
+
+        if files_compressed:
+            logger.context_files_compressed(len(files_compressed), tokens_saved)
+
+        return tokens_saved
+
+    def compress_old_tool_results(self, keep_recent: int = 3) -> int:
+        """
+        Compress old read_file tool results in messages.
+
+        After the LLM has seen file contents, we replace old read_file
+        outputs with compact summaries. Recent results are kept intact
+        since the LLM might need them for str_replace operations.
+
+        Args:
+            keep_recent: Number of recent read_file results to keep intact
+
+        Returns:
+            Number of tokens saved (estimated)
+        """
+        # Get paths of modified files - keep their read results intact
+        modified_paths: Set[str] = {mod.file_path for mod in self.modifications}
+
+        # Find all read_file results (from newest to oldest)
+        read_file_indices = []
+        for idx, msg in enumerate(self.messages):
+            if msg.role == "tool" and msg.metadata:
+                tool_name = msg.metadata.get("tool_name")
+                if tool_name == "read_file":
+                    read_file_indices.append(idx)
+
+        # Keep the most recent N read_file results intact
+        indices_to_compress = read_file_indices[:-keep_recent] if len(read_file_indices) > keep_recent else []
+
+        tokens_saved = 0
+        results_compressed = 0
+
+        for idx in indices_to_compress:
+            msg = self.messages[idx]
+            content = msg.content or ""
+
+            # Skip if already compressed
+            if "[READ_FILE SUMMARY]" in content:
+                continue
+
+            # Skip small results
+            if len(content) < 1000:
+                continue
+
+            # Get the file path from metadata
+            args = msg.metadata.get("arguments", {})
+            file_path = args.get("path", "unknown")
+
+            # Skip if this file was modified (might need to re-read)
+            if file_path in modified_paths:
+                continue
+
+            # Create a compressed version
+            try:
+                compressed = self._compress_read_result(file_path, content)
+
+                # Calculate savings
+                old_tokens = len(content) // 4
+                new_tokens = len(compressed) // 4
+                tokens_saved += (old_tokens - new_tokens)
+
+                # Replace content
+                msg.content = compressed
+                results_compressed += 1
+
+            except Exception:
+                continue
+
+        if results_compressed > 0:
+            logger.context_files_compressed(results_compressed, tokens_saved)
+
+        return tokens_saved
+
+    def _compress_read_result(self, file_path: str, content: str) -> str:
+        """
+        Compress a read_file tool result.
+
+        Keeps first and last few lines, replaces middle with summary.
+
+        Args:
+            file_path: Path to the file that was read
+            content: The full read_file output
+
+        Returns:
+            Compressed version
+        """
+        lines = content.split('\n')
+        total_lines = len(lines)
+
+        # Keep first 10 and last 5 lines of output
+        if total_lines <= 20:
+            return content  # Too short to compress
+
+        first_lines = lines[:10]
+        last_lines = lines[-5:]
+        middle_count = total_lines - 15
+
+        compressed_lines = []
+        compressed_lines.append(f"[READ_FILE SUMMARY] {file_path}")
+        compressed_lines.append(f"Total lines in output: {total_lines}")
+        compressed_lines.append("")
+        compressed_lines.append("=== First 10 lines ===")
+        compressed_lines.extend(first_lines)
+        compressed_lines.append("")
+        compressed_lines.append(f"... [{middle_count} lines omitted - use read_file with start_line/end_line to access] ...")
+        compressed_lines.append("")
+        compressed_lines.append("=== Last 5 lines ===")
+        compressed_lines.extend(last_lines)
+
+        return '\n'.join(compressed_lines)
+
+    def _create_file_summary(self, path: str, content: str) -> str:
+        """
+        Create a compact summary of a file's content.
+
+        Includes:
+        - File metadata (lines, language)
+        - Imports (for dependency understanding)
+        - Class/function signatures (for structure understanding)
+
+        Args:
+            path: File path
+            content: Full file content
+
+        Returns:
+            Compact summary string
+        """
+        try:
+            from vishwa.code_intelligence.smart_reader import get_structure
+
+            # Get structure (this re-parses but is fast)
+            structure = get_structure(path)
+
+            lines = []
+            lines.append(f"[FILE SUMMARY] {Path(path).name}")
+            lines.append(f"Path: {path}")
+            lines.append(f"Lines: {structure.total_lines} | Language: {structure.language}")
+            lines.append("")
+
+            # Include imports (important for understanding dependencies)
+            if structure.imports:
+                lines.append("Imports:")
+                for imp in structure.imports[:15]:  # Limit to 15 imports
+                    lines.append(f"  {imp}")
+                if len(structure.imports) > 15:
+                    lines.append(f"  ... and {len(structure.imports) - 15} more")
+                lines.append("")
+
+            # Include class definitions
+            if structure.classes:
+                lines.append("Classes:")
+                for class_name, line_num in structure.classes:
+                    lines.append(f"  {class_name} (line {line_num})")
+                lines.append("")
+
+            # Include function definitions
+            if structure.functions:
+                lines.append("Functions:")
+                for func_name, line_num in structure.functions[:20]:  # Limit to 20
+                    lines.append(f"  {func_name} (line {line_num})")
+                if len(structure.functions) > 20:
+                    lines.append(f"  ... and {len(structure.functions) - 20} more")
+                lines.append("")
+
+            lines.append("[Use read_file with start_line/end_line to read specific sections]")
+
+            return "\n".join(lines)
+
+        except Exception:
+            # Fallback: basic summary from content analysis
+            content_lines = content.split('\n')
+            num_lines = len(content_lines)
+
+            lines = []
+            lines.append(f"[FILE SUMMARY] {Path(path).name}")
+            lines.append(f"Path: {path}")
+            lines.append(f"Lines: {num_lines}")
+            lines.append("")
+            lines.append("[Use read_file with start_line/end_line to read specific sections]")
+
+            return "\n".join(lines)
 
     def prune_if_needed(self) -> None:
         """
