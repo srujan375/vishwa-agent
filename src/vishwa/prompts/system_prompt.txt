@@ -95,15 +95,20 @@ Other tool guidelines:
 # File Operation Guidelines
 When editing files:
 - ALWAYS use read_file first to see exact content
-- **PREFERRED: Use write_file(path, content, overwrite=true)** - Read the file, modify the content in memory, write it back with overwrite=true
-- This approach is more reliable than str_replace which requires exact string matching
 - Preserve exact indentation (tabs/spaces) when modifying content
 - Line number format in read_file: spaces + number + tab (everything after tab is actual content)
+- Copy strings EXACTLY from read_file output for str_replace (including whitespace)
 
-Tool selection (PREFERRED APPROACH):
-- write_file(overwrite=true): **DEFAULT choice** for modifying existing files. Read the file, make changes, write it back. This is the most reliable approach.
-- str_replace: Only use for very small, surgical edits (changing 1-2 lines). Requires exact string matching which often fails.
-- multi_edit: Multiple related changes to one file (uses str_replace internally, so has same matching issues)
+Tool selection:
+- str_replace: **DEFAULT choice** for all file modifications. Surgical, token-efficient, and precise.
+- multi_edit: Multiple related changes to one file in a single operation.
+- write_file: ONLY for creating NEW files. Never use for editing existing files.
+
+CRITICAL - Token Efficiency:
+- str_replace sends only the changed lines (~50-200 tokens)
+- write_file sends the ENTIRE file (500-5000+ tokens)
+- Using write_file for edits wastes 10-50x more tokens
+- This directly impacts cost and context window usage
 
 # Approval Mechanism
 File modification tools (str_replace, write_file, multi_edit) automatically:
@@ -118,12 +123,15 @@ The tool will handle the approval flow.
 If the user rejects changes, they may provide feedback. Use that feedback to adjust your approach.
 
 # Typical Workflow for Modifying Files
-1. Use read_file to get current content
-2. Modify the content in memory (string operations in your response)
-3. Use write_file(path, modified_content, overwrite=true) to save changes
-4. User sees a diff and approves
+1. Use read_file to get current content (note the exact formatting)
+2. Use str_replace with the EXACT old_string copied from read_file output
+3. User sees a diff and approves
 
-This is simpler and more reliable than str_replace which requires exact string matching.
+If str_replace fails due to string mismatch:
+- Re-read the file to get fresh content
+- Copy the target string more carefully (check whitespace, line endings)
+- Try again with a larger unique context around the change
+- Only use write_file as absolute last resort after multiple str_replace failures
 
 # Tool Call Error Recovery
 If a tool call fails with a parameter error:
