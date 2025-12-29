@@ -5,9 +5,52 @@ Based on Claude Code's Task tool specification.
 Implements Explore and Plan agents that autonomously handle multi-round searches.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+import json
+import uuid
+from datetime import datetime
+
 from vishwa.tools.base import Tool, ToolResult
 from vishwa.utils.logger import logger
+
+
+class SubAgentStorage:
+    """Store and retrieve sub-agent detailed findings to minimize context bloat."""
+
+    def __init__(self, storage_dir: str = "~/.vishwa/subagents"):
+        self.storage_dir = Path(storage_dir).expanduser()
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+
+    def store(self, data: Dict[str, Any]) -> str:
+        """Store full details, return unique key."""
+        # Generate unique key: {subagent_type}-{timestamp}-{uuid}
+        subagent_type = data.get("subagent_type", "unknown")
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        key = f"{subagent_type}-{timestamp}-{uuid.uuid4().hex[:8]}"
+        filepath = self.storage_dir / f"{key}.json"
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+        return key
+
+    def retrieve(self, key: str) -> Optional[Dict[str, Any]]:
+        """Retrieve full details by key."""
+        filepath = self.storage_dir / f"{key}.json"
+        if filepath.exists():
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        return None
+
+    def list_recent(self, subagent_type: Optional[str] = None, limit: int = 10) -> List[str]:
+        """List recent stored keys."""
+        keys = []
+        for f in sorted(self.storage_dir.glob("*.json"), reverse=True):
+            key = f.stem
+            if subagent_type is None or key.startswith(subagent_type):
+                keys.append(key)
+                if len(keys) >= limit:
+                    break
+        return keys
 
 
 class TaskTool(Tool):
@@ -21,49 +64,115 @@ class TaskTool(Tool):
     multi-round autonomous search instead of single grep/glob calls.
     """
 
-    def __init__(self, llm, tool_registry):
+    def __init__(self, llm, tool_registry, storage_dir: str = "~/.vishwa/subagents"):
         """
         Initialize Task tool.
 
         Args:
             llm: LLM instance to use for sub-agents
             tool_registry: Main tool registry (to get tools for sub-agents)
+            storage_dir: Directory for storing detailed sub-agent findings
         """
         self.llm = llm
         self.tool_registry = tool_registry
+        self.storage = SubAgentStorage(storage_dir)
 
     @property
     def name(self) -> str:
         return "task"
 
     @property
+    def templates(self) -> Dict[str, str]:
+        """Pre-built prompt templates for common tasks.
+
+        Usage: templates["template_name"].format(key=value)
+        """
+        return {
+            "analyze_tests": """Find all tests for {module}. Identify:
+1. Testing framework and tools used
+2. Test patterns and conventions
+3. Coverage gaps in {module}
+4. Files that need tests
+
+Return structured findings with file references.""",
+
+            "review_code": """Review {file} for code smells:
+1. Long functions (>50 lines)
+2. Duplicate code patterns
+3. Magic numbers/strings
+4. Complex conditionals
+5. God modules/classes
+
+Return findings with file:line references and severity levels.""",
+
+            "document_api": """Generate API documentation for {file}:
+1. All functions/classes with signatures
+2. Parameters and return types
+3. Purpose and usage examples
+4. Dependencies and related code
+
+Return structured output.""",
+
+            "plan_feature": """Create implementation plan for {feature}:
+1. Find related existing code
+2. Identify integration points
+3. List files to modify
+4. Steps to implement
+5. Testing approach
+
+Return structured plan with file references.""",
+
+            "find_pattern": """Find all occurrences of {pattern} in the codebase:
+1. Where it's defined
+2. Where it's used
+3. Related patterns
+4. Integration points
+
+Return findings with file:line references.""",
+
+            "analyze_architecture": """Analyze the architecture for {component}:
+1. Main files and their responsibilities
+2. Data flow and dependencies
+3. Interface points
+4. Patterns used
+
+Return structured summary.""",
+        }
+
+    @property
     def description(self) -> str:
         return """Launch a new agent to handle complex, multi-step tasks autonomously.
 
-The Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
+## When to Delegate
 
-Available agent types and the tools they have access to:
-- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions. (Tools: grep, glob, read_file, goto_definition, find_references, hover_info)
+Multi-step tasks that require iteration should NOT be done manually - delegate to a sub-agent.
 
-- Plan: Agent for planning implementations. Use when you need to create an implementation plan but not execute it yet. (Tools: grep, glob, read_file)
+| Task Type | Sub-agent | Trigger Keywords |
+|-----------|-----------|------------------|
+| Test analysis | Test | "test", "coverage", "fixtures" |
+| Code review | Refactor | "refactor", "code smells", "review" |
+| Docs generation | Documentation | "document", "docs", "comments" |
+| Planning | Plan | "plan", "implement", "approach" |
+| Exploration | Explore | "find", "where", "how does" |
 
-When NOT to use the Task tool:
-- If you want to read a specific file path, use read_file instead
-- If searching for a specific class definition like "class Foo", use glob instead
-- If searching for code within a specific file or set of 2-3 files, use read_file instead
-- Other tasks that are not related to the agent descriptions above
+## Available Sub-agents
 
-Usage notes:
-- The agent will return a single message back to you when done
-- The result is not visible to the user - you should summarize it for them
-- Each agent invocation is stateless
-- Your prompt should contain a highly detailed task description for the agent to perform autonomously
-- Specify exactly what information the agent should return in its final message
-- Clearly tell the agent whether you expect it to write code or just do research (for Explore, it's always research only)
+- Explore: Fast agent specialized for exploring codebases
+- Plan: Agent for planning implementations
+- Test: Agent specialized for writing and understanding tests
+- Refactor: Agent for code improvement and restructuring
+- Documentation: Agent for generating documentation
 
-Examples:
-- task(subagent_type="Explore", prompt="Find where client errors are handled. Search for error handling patterns, try-catch blocks, error classes, and error middleware. Return file:line references and brief descriptions.", description="Find error handling")
-- task(subagent_type="Explore", prompt="Understand the database connection architecture. Look for connection pooling, ORM usage, and query builders. Be thorough - check config files too. Return architecture summary with key files.", description="Analyze DB architecture")
+## Pre-built Templates
+
+Use templates to make delegation easier:
+- analyze_tests, review_code, document_api, plan_feature, find_pattern, analyze_architecture
+
+Example: task(subagent_type="Test", prompt=templates["analyze_tests"].format(module="auth"), description="Analyze auth tests")
+
+## Output Format
+
+Sub-agents return structured summaries. Details are stored and retrievable via full_details_key in metadata.
 """
 
     @property
@@ -73,7 +182,7 @@ Examples:
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "enum": ["Explore", "Plan"],
+                    "enum": ["Explore", "Plan", "Test", "Refactor", "Documentation"],
                     "description": "The type of specialized agent to use for this task",
                 },
                 "prompt": {
@@ -98,7 +207,7 @@ Examples:
         Execute a task by launching a specialized sub-agent.
 
         Args:
-            subagent_type: Type of agent ("Explore" or "Plan")
+            subagent_type: Type of agent ("Explore", "Plan", "Test", "Refactor", or "Documentation")
             prompt: Detailed task description
             description: Short description for logging
             thoroughness: "quick", "medium", or "very thorough"
@@ -127,11 +236,26 @@ Examples:
             tools = ["grep", "glob", "read_file"]
             max_iterations = 10
 
+        elif subagent_type == "Test":
+            system_prompt = self._build_test_prompt(task_prompt, thoroughness)
+            tools = ["grep", "glob", "read_file"]
+            max_iterations = 10
+
+        elif subagent_type == "Refactor":
+            system_prompt = self._build_refactor_prompt(task_prompt, thoroughness)
+            tools = ["grep", "glob", "read_file"]
+            max_iterations = 10
+
+        elif subagent_type == "Documentation":
+            system_prompt = self._build_documentation_prompt(task_prompt, thoroughness)
+            tools = ["grep", "glob", "read_file"]
+            max_iterations = 10
+
         else:
             return ToolResult(
                 success=False,
                 error=f"Unknown subagent_type: {subagent_type}",
-                suggestion="Use 'Explore' or 'Plan'",
+                suggestion="Use 'Explore', 'Plan', 'Test', 'Refactor', or 'Documentation'",
             )
 
         try:
@@ -256,7 +380,20 @@ SEARCH STRATEGY:
 6. Compile findings into final summary
 
 BEGIN YOUR EXPLORATION NOW. Think step-by-step and explain your search strategy as you go.
-When you have enough information, provide your final summary.
+When you have enough information, provide your final summary in this format:
+
+## Summary
+Brief 2-3 sentence overview
+
+## Key Findings
+- Finding 1 (file:line)
+- Finding 2 (file:line)
+
+## Details
+### Finding 1
+- Location: file:line
+- What: Description
+- Why Important: Explanation
 """
 
     def _build_plan_prompt(self, task: str, thoroughness: str) -> str:
@@ -291,7 +428,7 @@ SEARCH STRATEGY:
 3. Identify integration points
 4. Check for relevant utilities/helpers
 
-BEGIN PLANNING NOW. When done, provide a CLEAR IMPLEMENTATION PLAN with file references and specific steps.
+BEGIN PLANNING NOW. When done, provide your CLEAR IMPLEMENTATION PLAN.
 """
 
     def _get_iterations_for_thoroughness(self, thoroughness: str) -> int:
@@ -301,3 +438,157 @@ BEGIN PLANNING NOW. When done, provide a CLEAR IMPLEMENTATION PLAN with file ref
             "medium": 8,
             "very thorough": 12,
         }.get(thoroughness, 8)
+
+    # ==================== PROMPT BUILDERS ====================
+
+    def _build_test_prompt(self, task: str, thoroughness: str) -> str:
+        """Build system prompt for Test agent."""
+
+        return f"""You are a Test agent - specialized for writing and understanding tests.
+
+YOUR TASK:
+{task}
+
+TOOLS AVAILABLE:
+- grep: Search file contents with regex
+- glob: Find files by pattern
+- read_file: Read file contents
+
+YOUR JOB:
+1. Explore the codebase to understand existing test patterns
+2. Find the testing framework and tools used
+3. Analyze test coverage and identify gaps
+4. If asked to write tests, follow existing patterns and conventions
+5. DO NOT modify production code - focus only on tests
+
+TESTING FOCUS AREAS:
+- Unit tests (individual functions/classes)
+- Integration tests (module interactions)
+- End-to-end tests (user workflows)
+- Test fixtures and mocking patterns
+- Test organization and naming conventions
+
+SEARCH STRATEGY:
+1. Find test directories and test files
+2. Identify the testing framework (pytest, unittest, etc.)
+3. Look at test patterns and fixtures
+4. Analyze coverage of critical functionality
+5. Provide recommendations or write tests as requested
+
+BEGIN TESTING WORK NOW. When done, provide a CLEAR SUMMARY with:
+- Testing framework and tools used
+- Existing test patterns found
+- Coverage gaps identified
+- Test files created/modified (if any)
+"""
+
+
+    def _build_refactor_prompt(self, task: str, thoroughness: str) -> str:
+        """Build system prompt for Refactor agent."""
+
+        return f"""You are a Refactor agent - specialized for code improvement and restructuring.
+
+YOUR TASK:
+{task}
+
+TOOLS AVAILABLE:
+- grep: Search file contents with regex
+- glob: Find files by pattern
+- read_file: Read file contents
+
+YOUR JOB:
+1. Analyze code for quality issues and code smells
+2. Identify opportunities for improvement
+3. Suggest refactoring strategies
+4. DO NOT modify code - only analyze and suggest
+5. Provide specific, actionable recommendations
+
+CODE SMELLS TO IDENTIFY:
+- Long functions (should be split into smaller ones)
+- Large classes (should be decomposed)
+- Duplicate code (should be extracted into utilities)
+- Magic numbers/strings (should be named constants)
+- Deeply nested conditionals (should be simplified)
+- God modules/files (should be split by responsibility)
+- Feature envy (data and methods should be closer)
+- Data clumps (related data should be objects)
+
+REFACTORING RECOMMENDATIONS SHOULD INCLUDE:
+- File:line reference of the issue
+- Description of the code smell
+- Suggested refactoring approach
+- Expected benefits (readability, maintainability, etc.)
+- Priority (high/medium/low)
+
+SEARCH STRATEGY:
+1. Identify files/modules to analyze
+2. Look for common anti-patterns
+3. Check function/class lengths and complexity
+4. Identify repeated code patterns
+5. Provide prioritized recommendations
+
+BEGIN REFACTORING ANALYSIS NOW. When done, provide a CLEAR SUMMARY with:
+- Code smells identified
+- Specific file:line references
+- Prioritized recommendations for improvement
+- Suggested refactoring steps
+"""
+
+
+    def _build_documentation_prompt(self, task: str, thoroughness: str) -> str:
+        """Build system prompt for Documentation agent."""
+
+        return f"""You are a Documentation agent - specialized for generating and improving documentation.
+
+YOUR TASK:
+{task}
+
+TOOLS AVAILABLE:
+- grep: Search file contents with regex
+- glob: Find files by pattern
+- read_file: Read file contents
+
+YOUR JOB:
+1. Understand the codebase structure and key components
+2. Find existing documentation
+3. Identify documentation gaps
+4. Generate documentation as requested
+5. Follow project documentation conventions
+
+DOCUMENTATION TYPES:
+- API documentation (function signatures, parameters, return values)
+- Module documentation (purpose, usage, examples)
+- Architecture documentation (system design, components)
+- Inline comments (complex logic explanations)
+- README files (getting started, setup instructions)
+
+SEARCH STRATEGY:
+1. Find existing documentation files (README.md, docs/, etc.)
+2. Identify the project's documentation style
+3. Explore the code to document
+4. Look at existing comments and docstrings
+5. Generate clear, concise documentation
+
+DOCUMENTATION GUIDELINES:
+- Use clear, simple language
+- Include code examples where helpful
+- Document parameters, return values, and exceptions
+- Explain the "why" not just the "what"
+- Follow existing documentation style
+
+BEGIN DOCUMENTATION WORK NOW. When done, provide your CLEAR SUMMARY in this format:
+
+## Summary
+Brief overview of documentation work
+
+## Documentation Created/Updated
+- File: What was documented
+- File: What was documented
+
+## Documentation Gaps
+- Gap 1
+- Gap 2
+
+## Recommendations
+- Future documentation work needed
+"""

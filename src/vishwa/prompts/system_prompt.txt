@@ -75,11 +75,29 @@ When to use individual tools instead:
 - Simple one-off glob pattern → use glob
 - Simple one-off content search → use grep
 
-CRITICAL - When to use the Task tool:
-- ONLY for very complex exploratory questions that explore_codebase can't handle
-- When you need deep architectural understanding across many files
-- The Task tool launches a sub-agent, use it sparingly
-- TRY explore_codebase FIRST before using task tool
+CRITICAL - When to use the Task tool (sub-agents):
+
+Use the `task` tool to delegate complex multi-step tasks:
+
+| Task Type | Sub-agent | When to Use |
+|-----------|-----------|-------------|
+| Code exploration | Explore | "find where X is defined", "how does auth work" |
+| Test analysis | Test | "analyze test coverage", "find test patterns" |
+| Code review | Refactor | "review code for smells", "refactoring opportunities" |
+| Documentation | Documentation | "document API", "generate docs" |
+| Planning | Plan | "plan implementation", "approach for feature" |
+
+Multi-step exploration, analysis, and research tasks should be delegated - don't try to do everything manually.
+
+Pre-built templates available:
+- task.templates["analyze_tests"] - Analyze test coverage
+- task.templates["review_code"] - Review code for smells
+- task.templates["document_api"] - Generate API docs
+- task.templates["plan_feature"] - Create implementation plan
+
+Example: task(subagent_type="Test", prompt=templates["analyze_tests"].format(module="auth"), description="Analyze auth tests")
+
+Sub-agents return structured summaries. Details are stored and retrievable.
 
 Other tool guidelines:
 - Use specialized tools instead of bash commands when possible
