@@ -481,7 +481,7 @@ def print_task(task: str) -> None:
     """Print the task being worked on"""
     panel = Panel(
         f"[bold]{task}[/bold]",
-        title="🎯 Task",
+        title="Task",
         border_style="blue",
     )
     console.print(panel)
@@ -493,42 +493,51 @@ def print_iteration(current: int, total: int) -> None:
 
 
 def print_action(tool_name: str, arguments: dict) -> None:
-    """Print tool action"""
-    args_str = ", ".join(f"{k}={v!r}" for k, v in arguments.items())
-    # Truncate long arguments
-    if len(args_str) > 100:
-        args_str = args_str[:100] + "..."
-    console.print(f"→ [cyan]{tool_name}[/cyan]({args_str})")
+    """Print tool action - subtle, single line"""
+    # Show only key arguments, truncate aggressively
+    key_args = []
+    for k, v in arguments.items():
+        v_str = str(v)
+        if len(v_str) > 30:
+            v_str = v_str[:27] + "..."
+        key_args.append(f"{k}={v_str}")
+    args_str = ", ".join(key_args)
+    if len(args_str) > 60:
+        args_str = args_str[:57] + "..."
+    console.print(f"[dim]> {tool_name}({args_str})[/dim]")
 
 
 def print_observation(result: any) -> None:
-    """Print tool observation"""
+    """Print tool observation - compact, understated"""
     success = getattr(result, "success", False)
     output = getattr(result, "output", None) or getattr(result, "error", "")
+    output_str = str(output)
 
-    # Truncate long output (increased from 300 to 1000 for bash results)
-    if len(str(output)) > 1000:
-        output = str(output)[:1000] + f"... [truncated, {len(str(output))} chars total]"
+    # Truncate aggressively - show just a brief summary
+    if len(output_str) > 150:
+        # Try to get first meaningful line
+        first_line = output_str.split('\n')[0][:100]
+        output_str = f"{first_line}... (+{len(output_str)} chars)"
 
     if success:
-        console.print(f"  [green]✓[/green] {output}")
+        console.print(f"  [dim green]ok[/dim green] [dim]{output_str}[/dim]")
     else:
-        console.print(f"  [red]✗[/red] {output}")
+        console.print(f"  [red]err[/red] [dim]{output_str}[/dim]")
 
 
 def print_success(message: str) -> None:
     """Print success message"""
-    console.print(f"\n[bold green]✅ {message}[/bold green]\n")
+    console.print(f"\n[bold green][ok] {message}[/bold green]\n")
 
 
 def print_warning(message: str) -> None:
     """Print warning message"""
-    console.print(f"\n[bold yellow]⚠️  {message}[/bold yellow]\n")
+    console.print(f"\n[bold yellow][warn] {message}[/bold yellow]\n")
 
 
 def print_error(message: str) -> None:
     """Print error message"""
-    console.print(f"\n[bold red]❌ {message}[/bold red]\n")
+    console.print(f"\n[bold red][error] {message}[/bold red]\n")
 
 
 def show_diff(filepath: str, old: str, new: str) -> None:
@@ -749,7 +758,7 @@ def show_modifications(modifications: list) -> None:
         console.print("[dim]No modifications made[/dim]")
         return
 
-    table = Table(title="📝 Files Modified")
+    table = Table(title="Files Modified")
 
     table.add_column("#", style="dim")
     table.add_column("File", style="cyan")
@@ -774,11 +783,11 @@ def show_modifications(modifications: list) -> None:
 def show_welcome() -> None:
     """Show welcome banner"""
     welcome_text = """
-# Vishwa 🛠️
+# Vishwa
 
 Terminal-based Agentic Coding Assistant
 
-Named after Vishwakarma (विश्वकर्मा), the divine architect and craftsman.
+Named after Vishwakarma, the divine architect and craftsman.
 """
     md = Markdown(welcome_text)
     console.print(md)
@@ -800,4 +809,170 @@ def create_spinner(text: str):
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
+    )
+
+
+# =============================================================================
+# SUB-AGENT VISUAL INDICATORS
+# =============================================================================
+
+# Sub-agent type configurations for visual display
+SUBAGENT_CONFIGS = {
+    "Explore": {
+        "icon": ">",
+        "color": "cyan",
+        "description": "Exploring codebase",
+    },
+    "Plan": {
+        "icon": ">",
+        "color": "blue",
+        "description": "Planning implementation",
+    },
+    "Test": {
+        "icon": ">",
+        "color": "magenta",
+        "description": "Analyzing tests",
+    },
+    "Refactor": {
+        "icon": ">",
+        "color": "yellow",
+        "description": "Reviewing code",
+    },
+    "Documentation": {
+        "icon": ">",
+        "color": "green",
+        "description": "Generating docs",
+    },
+}
+
+
+def print_subagent_start(subagent_type: str, description: str, thoroughness: str = "medium") -> None:
+    """
+    Print a visual indicator when a sub-agent is launched.
+
+    Creates a distinctive panel that clearly shows:
+    - Which type of sub-agent is running
+    - What task it's performing
+    - Thoroughness level (for Explore agents)
+
+    Args:
+        subagent_type: Type of sub-agent (Explore, Plan, Test, Refactor, Documentation)
+        description: Short description of the task
+        thoroughness: Thoroughness level (quick, medium, very thorough)
+    """
+    config = SUBAGENT_CONFIGS.get(subagent_type, {
+        "icon": "🤖",
+        "color": "white",
+        "description": "Running task",
+    })
+
+    icon = config["icon"]
+    color = config["color"]
+
+    # Build content
+    content_lines = []
+    content_lines.append(Text.from_markup(f"[bold {color}]{description}[/bold {color}]"))
+
+    # Add thoroughness indicator for Explore agents
+    if subagent_type == "Explore":
+        content_lines.append(Text.from_markup(f"\n[dim]Thoroughness: {thoroughness}[/dim]"))
+
+    content = Group(*content_lines)
+
+    # Create a distinctive panel
+    panel = Panel(
+        content,
+        title=f"[bold {color}]Sub-Agent: {subagent_type}[/bold {color}]",
+        subtitle="[dim italic]autonomous execution[/dim italic]",
+        border_style=color,
+        padding=(0, 2),
+    )
+
+    console.print()
+    console.print(panel)
+
+
+def print_subagent_progress(iteration: int, max_iterations: int, status: str = "") -> None:
+    """
+    Print progress update for a running sub-agent.
+
+    Args:
+        iteration: Current iteration number
+        max_iterations: Maximum iterations allowed
+        status: Optional status message
+    """
+    # Create progress bar
+    progress_width = 20
+    filled = int((iteration / max_iterations) * progress_width)
+    bar = "█" * filled + "░" * (progress_width - filled)
+
+    progress_text = f"  [dim]Progress: [{bar}] {iteration}/{max_iterations}[/dim]"
+    if status:
+        progress_text += f" [dim italic]{status}[/dim italic]"
+
+    console.print(progress_text)
+
+
+def print_subagent_complete(
+    subagent_type: str,
+    success: bool,
+    iterations_used: int,
+    stop_reason: str = ""
+) -> None:
+    """
+    Print completion indicator for a sub-agent.
+
+    Creates a clear visual showing the sub-agent has finished
+    and summarizes how it completed.
+
+    Args:
+        subagent_type: Type of sub-agent
+        success: Whether the sub-agent completed successfully
+        iterations_used: Number of iterations used
+        stop_reason: Reason for stopping
+    """
+    config = SUBAGENT_CONFIGS.get(subagent_type, {"icon": ">", "color": "white"})
+    color = config["color"]
+
+    if success:
+        status_icon = "[ok]"
+        status_color = "green"
+        status_text = "Complete"
+    else:
+        status_icon = "[fail]"
+        status_color = "red"
+        status_text = "Failed"
+
+    # Build completion message
+    completion_text = Text()
+    completion_text.append(f"  <- ", style=f"bold {color}")
+    completion_text.append(f"{subagent_type} ", style=f"bold {color}")
+    completion_text.append(f"{status_icon} {status_text}", style=f"bold {status_color}")
+    completion_text.append(f" | {iterations_used} iterations", style="dim")
+
+    if stop_reason:
+        completion_text.append(f" • {stop_reason}", style="dim italic")
+
+    console.print(completion_text)
+    console.print()
+
+
+def create_subagent_spinner(subagent_type: str, description: str):
+    """
+    Create a spinner for sub-agent execution.
+
+    Args:
+        subagent_type: Type of sub-agent
+        description: Task description
+
+    Returns:
+        Progress context manager with spinner
+    """
+    config = SUBAGENT_CONFIGS.get(subagent_type, {"icon": ">", "color": "cyan"})
+
+    return Progress(
+        SpinnerColumn("dots"),
+        TextColumn(f"[{config['color']}]{subagent_type}:[/{config['color']}] {{task.description}}"),
+        console=console,
+        transient=True,
     )

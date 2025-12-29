@@ -13,6 +13,11 @@ from datetime import datetime
 
 from vishwa.tools.base import Tool, ToolResult
 from vishwa.utils.logger import logger
+from vishwa.cli.ui import (
+    print_subagent_start,
+    print_subagent_complete,
+    create_subagent_spinner,
+)
 
 
 class SubAgentStorage:
@@ -263,6 +268,11 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
             from vishwa.agent.core import VishwaAgent
             from vishwa.tools.base import ToolRegistry
 
+            # ═══════════════════════════════════════════════════════════════
+            # VISUAL INDICATOR: Show sub-agent starting
+            # ═══════════════════════════════════════════════════════════════
+            print_subagent_start(subagent_type, description, thoroughness)
+
             # Create sub-tool registry with only allowed tools
             sub_tool_registry = ToolRegistry()
             for tool_name in tools:
@@ -280,18 +290,33 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
                 verbose=False,  # Don't spam user with sub-agent's thinking
             )
 
-            # Run agent with the task
-            result = sub_agent.run(system_prompt, clear_context=True)
+            # Run agent with the task (with spinner)
+            spinner = create_subagent_spinner(subagent_type, description)
+            with spinner:
+                task_id = spinner.add_task(description, total=None)
+                result = sub_agent.run(system_prompt, clear_context=True)
 
             # Extract final answer from agent
             final_answer = result.message
 
-            # Log completion using tool_result pattern
-            logger.tool_result("task", True, f"Completed in {result.iterations_used} iterations", None)
+            # ═══════════════════════════════════════════════════════════════
+            # VISUAL INDICATOR: Show sub-agent completion
+            # ═══════════════════════════════════════════════════════════════
+            print_subagent_complete(
+                subagent_type=subagent_type,
+                success=result.success,
+                iterations_used=result.iterations_used,
+                stop_reason=result.stop_reason or "",
+            )
 
+            # Log completion using tool_result pattern
+            logger.tool_result("task", result.success, f"Completed in {result.iterations_used} iterations", None)
+
+            # Return success based on sub-agent's actual result
             return ToolResult(
-                success=True,
+                success=result.success,
                 output=final_answer,
+                error=None if result.success else f"Sub-agent stopped: {result.stop_reason}",
                 metadata={
                     "subagent_type": subagent_type,
                     "iterations_used": result.iterations_used,
@@ -302,6 +327,16 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
             )
 
         except Exception as e:
+            # ═══════════════════════════════════════════════════════════════
+            # VISUAL INDICATOR: Show sub-agent failure
+            # ═══════════════════════════════════════════════════════════════
+            print_subagent_complete(
+                subagent_type=subagent_type,
+                success=False,
+                iterations_used=0,
+                stop_reason=str(e),
+            )
+
             logger.error("task", f"Sub-agent failed: {str(e)}", exception=e)
             return ToolResult(
                 success=False,
@@ -320,8 +355,8 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
 Be quick and focused:
 - Try 1-2 search patterns
 - Read only the most relevant files (1-3 files max)
-- Return concise summary
-Target: 3-5 iterations
+- Return concise summary quickly
+Target: 5-8 iterations. Signal completion with "Final Answer:" as soon as you have enough info.
 """,
             "medium": """
 Be moderately thorough:
@@ -329,7 +364,7 @@ Be moderately thorough:
 - Check multiple file locations
 - Read key files to understand implementation
 - Return detailed summary with examples
-Target: 5-8 iterations
+Target: 10-15 iterations. Signal completion with "Final Answer:" when done.
 """,
             "very thorough": """
 Be extremely thorough:
@@ -338,7 +373,7 @@ Be extremely thorough:
 - Read multiple files to understand full context
 - Check test files too
 - Return comprehensive summary with all findings
-Target: 8-12 iterations
+Target: 15-25 iterations. Signal completion with "Final Answer:" when done.
 """
         }
 
@@ -380,8 +415,10 @@ SEARCH STRATEGY:
 6. Compile findings into final summary
 
 BEGIN YOUR EXPLORATION NOW. Think step-by-step and explain your search strategy as you go.
-When you have enough information, provide your final summary in this format:
 
+IMPORTANT: When you have gathered enough information, you MUST signal completion by starting your response with "Final Answer:" followed by your summary.
+
+Final Answer:
 ## Summary
 Brief 2-3 sentence overview
 
@@ -390,10 +427,7 @@ Brief 2-3 sentence overview
 - Finding 2 (file:line)
 
 ## Details
-### Finding 1
-- Location: file:line
-- What: Description
-- Why Important: Explanation
+Relevant details about your findings.
 """
 
     def _build_plan_prompt(self, task: str, thoroughness: str) -> str:
@@ -428,16 +462,20 @@ SEARCH STRATEGY:
 3. Identify integration points
 4. Check for relevant utilities/helpers
 
-BEGIN PLANNING NOW. When done, provide your CLEAR IMPLEMENTATION PLAN.
+BEGIN PLANNING NOW. When done, signal completion with "Final Answer:" followed by your implementation plan.
+
+Final Answer:
+## Implementation Plan
+[Your step-by-step plan here]
 """
 
     def _get_iterations_for_thoroughness(self, thoroughness: str) -> int:
         """Get max iterations based on thoroughness level."""
         return {
-            "quick": 5,
-            "medium": 8,
-            "very thorough": 12,
-        }.get(thoroughness, 8)
+            "quick": 8,
+            "medium": 15,
+            "very thorough": 25,
+        }.get(thoroughness, 15)
 
     # ==================== PROMPT BUILDERS ====================
 
@@ -475,11 +513,13 @@ SEARCH STRATEGY:
 4. Analyze coverage of critical functionality
 5. Provide recommendations or write tests as requested
 
-BEGIN TESTING WORK NOW. When done, provide a CLEAR SUMMARY with:
+BEGIN TESTING WORK NOW. When done, signal completion with "Final Answer:" followed by your summary.
+
+Final Answer:
+## Test Analysis Summary
 - Testing framework and tools used
 - Existing test patterns found
 - Coverage gaps identified
-- Test files created/modified (if any)
 """
 
 
@@ -527,10 +567,12 @@ SEARCH STRATEGY:
 4. Identify repeated code patterns
 5. Provide prioritized recommendations
 
-BEGIN REFACTORING ANALYSIS NOW. When done, provide a CLEAR SUMMARY with:
-- Code smells identified
-- Specific file:line references
-- Prioritized recommendations for improvement
+BEGIN REFACTORING ANALYSIS NOW. When done, signal completion with "Final Answer:" followed by your summary.
+
+Final Answer:
+## Refactoring Analysis
+- Code smells identified with file:line references
+- Prioritized recommendations
 - Suggested refactoring steps
 """
 
@@ -576,19 +618,15 @@ DOCUMENTATION GUIDELINES:
 - Explain the "why" not just the "what"
 - Follow existing documentation style
 
-BEGIN DOCUMENTATION WORK NOW. When done, provide your CLEAR SUMMARY in this format:
+BEGIN DOCUMENTATION WORK NOW. When done, signal completion with "Final Answer:" followed by your summary.
 
-## Summary
+Final Answer:
+## Documentation Summary
 Brief overview of documentation work
 
 ## Documentation Created/Updated
 - File: What was documented
-- File: What was documented
 
-## Documentation Gaps
-- Gap 1
-- Gap 2
-
-## Recommendations
-- Future documentation work needed
+## Gaps and Recommendations
+- Documentation gaps and future work needed
 """

@@ -57,47 +57,46 @@ UNDERSTANDING DEPENDENCIES:
 - analyze_dependencies(path="auth.py", operation="impact_radius")
 - This shows what files might break if you change auth.py
 
-CRITICAL - Efficient Codebase Exploration:
+CRITICAL - Codebase Exploration Strategy:
 
-PREFERRED TOOL: explore_codebase
-This meta-tool combines multiple operations in ONE call, dramatically reducing iterations:
+PREFERRED: Use the `task` tool (sub-agents) for exploratory questions.
 
-USE explore_codebase FOR:
-- Finding files AND getting their structure: explore_codebase(file_pattern="**/*.py", get_structure=true)
-- Searching + understanding results: explore_codebase(search_pattern="auth", file_pattern="**/*.py", get_structure=true)
-- Understanding a module: explore_codebase(file_pattern="src/models/**/*.py", get_structure=true)
-- Finding implementation: explore_codebase(search_pattern="class User", file_pattern="**/*.py", include_content=true)
+When the user asks questions like:
+- "Where is X implemented?"
+- "How does Y work?"
+- "Find all Z in the codebase"
+- "What files handle W?"
 
-This replaces 5-10 separate tool calls (glob → grep → analyze_structure → read_file) with just ONE call.
-
-When to use individual tools instead:
-- You already know the exact file path → use read_file directly
-- Simple one-off glob pattern → use glob
-- Simple one-off content search → use grep
-
-CRITICAL - When to use the Task tool (sub-agents):
-
-Use the `task` tool to delegate complex multi-step tasks:
+ALWAYS delegate to a sub-agent using the `task` tool:
 
 | Task Type | Sub-agent | When to Use |
 |-----------|-----------|-------------|
-| Code exploration | Explore | "find where X is defined", "how does auth work" |
+| Code exploration | Explore | "find where X is defined", "how does Y work", "where is Z" |
 | Test analysis | Test | "analyze test coverage", "find test patterns" |
 | Code review | Refactor | "review code for smells", "refactoring opportunities" |
 | Documentation | Documentation | "document API", "generate docs" |
 | Planning | Plan | "plan implementation", "approach for feature" |
 
-Multi-step exploration, analysis, and research tasks should be delegated - don't try to do everything manually.
+Example usage:
+```
+task(subagent_type="Explore", prompt="Find where authentication is implemented and how it works", description="Find auth implementation", thoroughness="medium")
+```
 
-Pre-built templates available:
-- task.templates["analyze_tests"] - Analyze test coverage
-- task.templates["review_code"] - Review code for smells
-- task.templates["document_api"] - Generate API docs
-- task.templates["plan_feature"] - Create implementation plan
+Sub-agents run autonomously and return structured summaries. This keeps the main context clean.
 
-Example: task(subagent_type="Test", prompt=templates["analyze_tests"].format(module="auth"), description="Analyze auth tests")
+FALLBACK: Use explore_codebase only when:
+- You need a quick, single-step lookup (not multi-step exploration)
+- You already know roughly where to look
+- The user explicitly asks for a simple file listing
 
-Sub-agents return structured summaries. Details are stored and retrievable.
+explore_codebase usage:
+- Finding files AND getting their structure: explore_codebase(file_pattern="**/*.py", get_structure=true)
+- Quick search: explore_codebase(search_pattern="auth", file_pattern="**/*.py")
+
+When to use individual tools:
+- You already know the exact file path → use read_file directly
+- Simple one-off glob pattern → use glob
+- Simple one-off content search → use grep
 
 Other tool guidelines:
 - Use specialized tools instead of bash commands when possible
