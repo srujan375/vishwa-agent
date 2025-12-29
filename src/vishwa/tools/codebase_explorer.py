@@ -116,6 +116,22 @@ Returns comprehensive exploration results in ONE tool call instead of 5-10.
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Patterns to exclude (e.g., ['test_*', '**/migrations/**'])"
+                },
+                "find_symbol_usages": {
+                    "type": "string",
+                    "description": "Find all usages of a symbol using LSP (e.g., 'UserModel'). Requires file_pattern to narrow scope."
+                },
+                "symbol_file": {
+                    "type": "string",
+                    "description": "File where the symbol is defined (used with find_symbol_usages)"
+                },
+                "symbol_line": {
+                    "type": "integer",
+                    "description": "Line number where the symbol is defined (0-indexed, used with find_symbol_usages)"
+                },
+                "symbol_character": {
+                    "type": "integer",
+                    "description": "Character offset of the symbol (0-indexed, used with find_symbol_usages)"
                 }
             },
             "required": ["file_pattern"]
@@ -132,6 +148,18 @@ Returns comprehensive exploration results in ONE tool call instead of 5-10.
         max_files = kwargs.get("max_files", 20)
         context_lines = kwargs.get("context_lines", 2)
         exclude_patterns = kwargs.get("exclude_patterns", [])
+
+        # Handle LSP symbol usage finding
+        find_symbol_usages = kwargs.get("find_symbol_usages")
+        if find_symbol_usages:
+            symbol_file = kwargs.get("symbol_file")
+            symbol_line = kwargs.get("symbol_line")
+            symbol_character = kwargs.get("symbol_character")
+
+            if symbol_file and symbol_line is not None and symbol_character is not None:
+                return self._lsp_find_references(
+                    symbol_file, symbol_line, symbol_character, max_files
+                )
 
         try:
             # Step 1: Find files matching pattern
@@ -345,3 +373,85 @@ Returns comprehensive exploration results in ONE tool call instead of 5-10.
                 continue
 
         return results
+
+    def _lsp_find_references(
+        self,
+        file_path: str,
+        line: int,
+        character: int,
+        max_results: int = 50
+    ) -> ToolResult:
+        """Find all references to a symbol using LSP."""
+        try:
+            from vishwa.lsp.server_manager import get_server_manager
+            from vishwa.lsp.document_manager import get_document_manager
+
+            # Ensure document is open
+            doc_manager = get_document_manager()
+            if not doc_manager.ensure_open(file_path):
+                return ToolResult(
+                    success=False,
+                    error=f"No LSP server available for {file_path}",
+                    suggestion="Install the appropriate language server"
+                )
+
+            # Get client and find references
+            server_manager = get_server_manager()
+            client = server_manager.get_client_for_file(file_path)
+
+            if client is None:
+                return ToolResult(success=False, error="LSP client not available")
+
+            abs_path = str(Path(file_path).resolve())
+            locations = client.find_references(abs_path, line, character, True)
+
+            if not locations:
+                return ToolResult(
+                    success=True,
+                    output="No references found",
+                    metadata={"count": 0}
+                )
+
+            # Format output
+            total_count = len(locations)
+            locations = locations[:max_results]
+
+            output = f"Found {total_count} references using LSP:\n\n"
+
+            for loc in locations:
+                ref_path = loc.to_file_path()
+                try:
+                    ref_path = str(Path(ref_path).relative_to(Path.cwd()))
+                except ValueError:
+                    pass
+                ref_line = loc.range.start.line + 1
+
+                # Get the line content
+                try:
+                    with open(loc.to_file_path(), 'r', encoding='utf-8') as f:
+                        for i, content in enumerate(f):
+                            if i == loc.range.start.line:
+                                output += f"{ref_path}:{ref_line}\n"
+                                output += f"  {ref_line}| {content.strip()}\n\n"
+                                break
+                except:
+                    output += f"{ref_path}:{ref_line}\n\n"
+
+            if total_count > max_results:
+                output += f"... and {total_count - max_results} more references\n"
+
+            return ToolResult(
+                success=True,
+                output=output,
+                metadata={
+                    "count": total_count,
+                    "method": "lsp"
+                }
+            )
+
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error=f"LSP reference search failed: {str(e)}",
+                suggestion="Try using search_pattern for text-based search instead"
+            )

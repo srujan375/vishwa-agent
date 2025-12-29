@@ -368,6 +368,7 @@ class ReadSymbolTool(Tool):
     Read just a specific function or class from a file.
 
     For large files, this is MUCH faster than reading the whole file.
+    Uses LSP when available for more accurate symbol resolution.
     """
 
     @property
@@ -381,7 +382,7 @@ class ReadSymbolTool(Tool):
 For large files (thousands of lines), this is much faster than read_file.
 
 Instead of reading the entire file:
-1. Find where the symbol is defined (line number)
+1. Find where the symbol is defined (using LSP if available, otherwise regex)
 2. Read just that section (function/class body)
 3. Return only what's needed
 
@@ -398,6 +399,7 @@ Parameters:
 - path: File path
 - symbol_name: Name of function or class
 - symbol_type: "function" or "class"
+- use_lsp: Use LSP for more accurate symbol resolution (default: true if available)
 """
 
     @property
@@ -417,6 +419,10 @@ Parameters:
                     "type": "string",
                     "enum": ["function", "class"],
                     "description": "Type of symbol (function or class)"
+                },
+                "use_lsp": {
+                    "type": "boolean",
+                    "description": "Use LSP for more accurate resolution (default: true if available)"
                 }
             },
             "required": ["path", "symbol_name", "symbol_type"]
@@ -428,7 +434,15 @@ Parameters:
         path = kwargs["path"]
         symbol_name = kwargs["symbol_name"]
         symbol_type = kwargs["symbol_type"]
+        use_lsp = kwargs.get("use_lsp", True)
 
+        # Try LSP first if enabled
+        if use_lsp:
+            lsp_result = self._try_lsp_resolution(path, symbol_name, symbol_type)
+            if lsp_result:
+                return lsp_result
+
+        # Fall back to regex-based resolution
         try:
             content = read_symbol(path, symbol_name, symbol_type)
 
@@ -438,7 +452,8 @@ Parameters:
                 metadata={
                     "path": path,
                     "symbol_name": symbol_name,
-                    "symbol_type": symbol_type
+                    "symbol_type": symbol_type,
+                    "method": "regex"
                 }
             )
 
@@ -453,3 +468,75 @@ Parameters:
                 success=False,
                 error=f"Failed to read symbol: {str(e)}"
             )
+
+    def _try_lsp_resolution(self, path: str, symbol_name: str, symbol_type: str) -> ToolResult | None:
+        """Try to resolve symbol using LSP for more accuracy."""
+        try:
+            from vishwa.lsp.server_manager import get_server_manager
+            from vishwa.lsp.document_manager import get_document_manager
+
+            server_manager = get_server_manager()
+            if not server_manager.is_available(path):
+                return None
+
+            doc_manager = get_document_manager()
+            if not doc_manager.ensure_open(path):
+                return None
+
+            client = server_manager.get_client_for_file(path)
+            if not client:
+                return None
+
+            # Get document symbols
+            abs_path = str(Path(path).resolve())
+            symbols = client.document_symbols(abs_path)
+
+            if not symbols:
+                return None
+
+            # Find the matching symbol
+            target_kind = 5 if symbol_type == "class" else 12  # LSP SymbolKind: Class=5, Function=12
+            for sym in symbols:
+                sym_name = sym.get("name", "")
+                sym_kind = sym.get("kind", 0)
+
+                if sym_name == symbol_name and sym_kind == target_kind:
+                    # Found the symbol, extract its range
+                    range_data = sym.get("range", sym.get("location", {}).get("range"))
+                    if range_data:
+                        start_line = range_data["start"]["line"]
+                        end_line = range_data["end"]["line"]
+
+                        # Read the symbol content
+                        content = self._read_lines(path, start_line, end_line + 1)
+
+                        return ToolResult(
+                            success=True,
+                            output=content,
+                            metadata={
+                                "path": path,
+                                "symbol_name": symbol_name,
+                                "symbol_type": symbol_type,
+                                "start_line": start_line + 1,
+                                "end_line": end_line + 1,
+                                "method": "lsp"
+                            }
+                        )
+
+            return None  # Symbol not found via LSP, fall back to regex
+
+        except Exception:
+            return None  # Fall back to regex on any error
+
+    def _read_lines(self, path: str, start_line: int, end_line: int) -> str:
+        """Read specific line range from file."""
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = []
+            for i, line in enumerate(f):
+                if i < start_line:
+                    continue
+                if i >= end_line:
+                    break
+                lines.append(f"{i + 1:4d}| {line.rstrip()}")
+
+        return '\n'.join(lines)

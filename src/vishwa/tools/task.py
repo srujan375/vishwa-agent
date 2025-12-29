@@ -43,7 +43,7 @@ class TaskTool(Tool):
 The Task tool launches specialized agents (subprocesses) that autonomously handle complex tasks. Each agent type has specific capabilities and tools available to it.
 
 Available agent types and the tools they have access to:
-- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions. (Tools: grep, glob, read_file)
+- Explore: Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions. (Tools: grep, glob, read_file, goto_definition, find_references, hover_info)
 
 - Plan: Agent for planning implementations. Use when you need to create an implementation plan but not execute it yet. (Tools: grep, glob, read_file)
 
@@ -119,7 +119,7 @@ Examples:
         # Configure agent based on type
         if subagent_type == "Explore":
             system_prompt = self._build_explore_prompt(task_prompt, thoroughness)
-            tools = ["grep", "glob", "read_file"]
+            tools = ["grep", "glob", "read_file", "goto_definition", "find_references", "hover_info"]
             max_iterations = self._get_iterations_for_thoroughness(thoroughness)
 
         elif subagent_type == "Plan":
@@ -230,6 +230,9 @@ TOOLS AVAILABLE:
 - grep: Search file contents with regex
 - glob: Find files by pattern
 - read_file: Read file contents
+- goto_definition: Jump to where a symbol is defined (LSP - more precise than grep)
+- find_references: Find all usages of a symbol (LSP - semantic, not text-based)
+- hover_info: Get type/documentation for a symbol (LSP)
 
 IMPORTANT RULES:
 1. DO NOT make any modifications - you are read-only
@@ -246,7 +249,11 @@ SEARCH STRATEGY:
 2. Use glob if you know file name patterns
 3. Read the most promising files
 4. If needed, try different search terms
-5. Compile findings into final summary
+5. For deeper understanding of a symbol:
+   - Use goto_definition to find where it's defined
+   - Use find_references to see how it's used
+   - Use hover_info to get documentation
+6. Compile findings into final summary
 
 BEGIN YOUR EXPLORATION NOW. Think step-by-step and explain your search strategy as you go.
 When you have enough information, provide your final summary.

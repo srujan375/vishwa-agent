@@ -347,6 +347,12 @@ class ToolRegistry:
         from vishwa.tools.todo import TodoWriteTool
         from vishwa.tools.analyze import AnalyzeStructureTool, AnalyzeDependenciesTool, ReadSymbolTool
         from vishwa.tools.codebase_explorer import CodebaseExplorerTool
+        from vishwa.tools.lsp_tools import (
+            GoToDefinitionTool,
+            FindReferencesTool,
+            HoverTool,
+            LSPStatusTool,
+        )
 
         registry = cls()
 
@@ -364,6 +370,12 @@ class ToolRegistry:
         registry.register(AnalyzeStructureTool())
         registry.register(AnalyzeDependenciesTool())
         registry.register(ReadSymbolTool())
+
+        # LSP-based code intelligence tools
+        registry.register(GoToDefinitionTool())
+        registry.register(FindReferencesTool())
+        registry.register(HoverTool())
+        registry.register(LSPStatusTool())
 
         # High-level exploration tool (reduces iteration count)
         registry.register(CodebaseExplorerTool())
