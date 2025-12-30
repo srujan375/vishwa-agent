@@ -100,6 +100,42 @@
           "description": "Qwen3 Next 80B A3B Instruct via Novita - Advanced Qwen model"
         }
       }
+    },
+    "openrouter": {
+      "models": {
+        "openrouter:openai/gpt-4o": {
+          "name": "openrouter:openai/gpt-4o",
+          "description": "GPT-4o via OpenRouter"
+        },
+        "openrouter:anthropic/claude-sonnet-4": {
+          "name": "openrouter:anthropic/claude-sonnet-4",
+          "description": "Claude Sonnet 4 via OpenRouter"
+        },
+        "openrouter:google/gemini-2.5-pro-preview": {
+          "name": "openrouter:google/gemini-2.5-pro-preview",
+          "description": "Gemini 2.5 Pro Preview via OpenRouter"
+        },
+        "openrouter:google/gemini-2.5-flash-preview": {
+          "name": "openrouter:google/gemini-2.5-flash-preview",
+          "description": "Gemini 2.5 Flash Preview via OpenRouter"
+        },
+        "openrouter:meta-llama/llama-4-maverick": {
+          "name": "openrouter:meta-llama/llama-4-maverick",
+          "description": "Llama 4 Maverick via OpenRouter"
+        },
+        "openrouter:deepseek/deepseek-r1": {
+          "name": "openrouter:deepseek/deepseek-r1",
+          "description": "DeepSeek R1 via OpenRouter"
+        },
+        "openrouter:z-ai/glm-4.7": {
+          "name": "openrouter:z-ai/glm-4.7",
+          "description": "GLM-4.7 via OpenRouter"
+        },
+        "openrouter:minimax/minimax-m2.1": {
+          "name": "openrouter:minimax/minimax-m2.1",
+          "description": "MiniMax M2.1 via OpenRouter"
+        }
+      }
     }
   },
   "aliases": {
@@ -113,6 +149,8 @@
     "ollama": "gpt-oss:20b-cloud",
     "glm": "glm-4.6:cloud",
     "deepseek": "deepseek-r1:latest",
-    "novita": "deepseek/deepseek-v3.2-exp"
+    "novita": "deepseek/deepseek-v3.2-exp",
+    "openrouter": "openrouter:google/gemini-2.5-flash-preview",
+    "gemini": "openrouter:google/gemini-2.5-flash-preview"
   }
 }

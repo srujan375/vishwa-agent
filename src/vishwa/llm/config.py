@@ -169,9 +169,14 @@ class LLMConfig:
             "claude-sonnet-4-20250514" -> "anthropic"
             "gpt-4o" -> "openai"
             "deepseek/deepseek-v3.2-exp" -> "novita"
+            "openrouter:openai/gpt-4o" -> "novita" (handled by NovitaProvider)
             "deepseek-coder:33b" -> "ollama"
         """
         model_lower = model_name.lower()
+
+        # Check for OpenRouter prefix - route to novita provider (it handles both)
+        if model_lower.startswith("openrouter:"):
+            return "novita"
 
         # Check patterns
         for pattern, provider in cls.PROVIDER_PATTERNS.items():
@@ -224,11 +229,16 @@ class LLMConfig:
             "anthropic": [],
             "openai": [],
             "novita": [],
+            "openrouter": [],
             "ollama": [],
         }
 
-        for model_name in set(cls.MODELS.values()):
-            provider = cls.detect_provider(model_name)
-            models_by_provider[provider].append(model_name)
+        for model_name in set(cls._get_models_dict().values()):
+            # Separate openrouter models for display purposes
+            if model_name.startswith("openrouter:"):
+                models_by_provider["openrouter"].append(model_name)
+            else:
+                provider = cls.detect_provider(model_name)
+                models_by_provider[provider].append(model_name)
 
         return models_by_provider
