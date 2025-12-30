@@ -5,13 +5,72 @@ Implements:
 - read_file: Read file contents (with optional line ranges)
 - str_replace: Surgical edits via exact string replacement
 - write_file: Create new files (only, never overwrites)
+- multi_edit: Apply multiple edits atomically
+
+All editing tools track modified line numbers for targeted code quality checks.
 """
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from vishwa.tools.base import ExactMatchNotFoundError, Tool, ToolResult, ApprovableTool
+
+
+def _calculate_modified_lines(old_content: str, new_content: str) -> Set[int]:
+    """
+    Calculate which lines were modified between old and new content.
+
+    Args:
+        old_content: Original file content
+        new_content: New file content
+
+    Returns:
+        Set of modified line numbers (1-indexed)
+    """
+    import difflib
+
+    old_lines = old_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+
+    modified_lines: Set[int] = set()
+
+    # Use difflib to find changes
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'replace':
+            # Lines j1 to j2 in new content are modified
+            for line_num in range(j1 + 1, j2 + 1):  # 1-indexed
+                modified_lines.add(line_num)
+        elif tag == 'insert':
+            # Lines j1 to j2 are new
+            for line_num in range(j1 + 1, j2 + 1):  # 1-indexed
+                modified_lines.add(line_num)
+        # 'delete' doesn't add to new file, 'equal' means no change
+
+    return modified_lines
+
+
+def _get_affected_lines_with_context(modified_lines: Set[int], total_lines: int, context: int = 2) -> Set[int]:
+    """
+    Expand modified lines to include context lines around them.
+
+    Args:
+        modified_lines: Set of modified line numbers
+        total_lines: Total number of lines in the file
+        context: Number of context lines before/after
+
+    Returns:
+        Set of affected line numbers including context
+    """
+    affected: Set[int] = set()
+    for line in modified_lines:
+        for offset in range(-context, context + 1):
+            affected_line = line + offset
+            if 1 <= affected_line <= total_lines:
+                affected.add(affected_line)
+    return affected
 
 
 class ReadFileTool(Tool):
@@ -381,6 +440,7 @@ WHEN NOT TO USE (use write_file or multi_edit instead):
     def apply_changes(self, preview_data: Dict[str, Any], **kwargs: Any) -> ToolResult:
         """Apply the replacement after approval."""
         path = preview_data["path"]
+        old_content = preview_data["old_content"]
         new_content = preview_data["new_content"]
         old_str = preview_data["old_str"]
         new_str = preview_data["new_str"]
@@ -394,6 +454,11 @@ WHEN NOT TO USE (use write_file or multi_edit instead):
             old_lines = len(old_str.splitlines())
             new_lines = len(new_str.splitlines())
 
+            # Calculate which lines were modified for targeted quality checks
+            modified_lines = _calculate_modified_lines(old_content, new_content)
+            total_lines = len(new_content.splitlines())
+            affected_lines = _get_affected_lines_with_context(modified_lines, total_lines)
+
             return ToolResult(
                 success=True,
                 output=f"Successfully replaced {old_lines} line(s) with {new_lines} line(s) in {path.name}",
@@ -403,6 +468,8 @@ WHEN NOT TO USE (use write_file or multi_edit instead):
                     "new_lines": new_lines,
                     "chars_removed": len(old_str),
                     "chars_added": len(new_str),
+                    "modified_lines": sorted(modified_lines),
+                    "affected_lines": sorted(affected_lines),
                 },
             )
 
@@ -550,6 +617,7 @@ IMPORTANT:
         """Apply the file creation/overwrite."""
         path = preview_data["path"]
         content = preview_data["content"]
+        old_content = preview_data.get("old_content", "")
         is_new = preview_data["is_new"]
 
         try:
@@ -564,6 +632,16 @@ IMPORTANT:
             chars = len(content)
             action = "Created" if is_new else "Overwrote"
 
+            # Calculate modified lines for quality checks
+            if is_new:
+                # For new files, all lines are "modified"
+                modified_lines = set(range(1, lines + 1))
+                affected_lines = modified_lines
+            else:
+                # For overwrites, calculate actual diff
+                modified_lines = _calculate_modified_lines(old_content, content)
+                affected_lines = _get_affected_lines_with_context(modified_lines, lines)
+
             return ToolResult(
                 success=True,
                 output=f"{action} {path.name} with {lines} lines ({chars} characters)",
@@ -572,6 +650,8 @@ IMPORTANT:
                     "lines": lines,
                     "chars": chars,
                     "is_new_file": is_new,
+                    "modified_lines": sorted(modified_lines),
+                    "affected_lines": sorted(affected_lines),
                 },
             )
 
@@ -747,6 +827,11 @@ This is more efficient than multiple str_replace calls and ensures atomicity.
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
+            # Calculate which lines were modified for targeted quality checks
+            modified_lines = _calculate_modified_lines(old_content, new_content)
+            total_lines = len(new_content.splitlines())
+            affected_lines = _get_affected_lines_with_context(modified_lines, total_lines)
+
             return ToolResult(
                 success=True,
                 output=f"Successfully applied {num_edits} edit(s) to {path.name}",
@@ -755,6 +840,8 @@ This is more efficient than multiple str_replace calls and ensures atomicity.
                     "edits_applied": num_edits,
                     "total_changes": len(new_content) - len(old_content),
                     "edit_details": edit_details,
+                    "modified_lines": sorted(modified_lines),
+                    "affected_lines": sorted(affected_lines),
                 },
             )
 

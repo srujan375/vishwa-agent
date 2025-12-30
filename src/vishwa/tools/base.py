@@ -353,6 +353,7 @@ class ToolRegistry:
             HoverTool,
             LSPStatusTool,
         )
+        from vishwa.tools.code_quality import CodeQualityTool, CodeReviewTool
 
         registry = cls()
 
@@ -379,6 +380,10 @@ class ToolRegistry:
 
         # High-level exploration tool (reduces iteration count)
         registry.register(CodebaseExplorerTool())
+
+        # Code quality tools
+        registry.register(CodeQualityTool())
+        registry.register(CodeReviewTool())
 
         # Tools that support approval (ApprovableTool subclasses)
         registry.register(StrReplaceTool(auto_approve=auto_approve))

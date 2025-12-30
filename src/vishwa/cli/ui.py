@@ -191,17 +191,33 @@ class InlineSelector:
         shortcut_map = {opt[2].lower(): i for i, opt in enumerate(self.options)}
 
         try:
-            with Live(self._build_display(), console=console, refresh_per_second=10, transient=True) as live:
+            # In VS Code integrated terminal, fall back to simple prompt
+            # because raw terminal mode may not work properly
+            if is_vscode():
+                return self._run_simple()
+
+            # Use refresh_per_second to prevent infinite refresh loops
+            # Also set auto_refresh=False to prevent automatic refreshes
+            with Live(
+                self._build_display(),
+                console=console,
+                transient=True,
+                refresh_per_second=4,  # Limit refresh rate to prevent infinite loops
+                auto_refresh=False,  # Disable auto-refresh, only update on user input
+            ) as live:
+                # Initial display
+                live.start()
+
                 while True:
                     key = _get_key()
 
                     if key == 'left':
                         self.selected_index = (self.selected_index - 1) % len(self.options)
-                        live.update(self._build_display())
+                        live.update(self._build_display(), refresh=True)
 
                     elif key == 'right':
                         self.selected_index = (self.selected_index + 1) % len(self.options)
-                        live.update(self._build_display())
+                        live.update(self._build_display(), refresh=True)
 
                     elif key == 'enter':
                         # Return selected option
@@ -214,11 +230,45 @@ class InlineSelector:
                     elif key in shortcut_map:
                         # Direct shortcut pressed
                         self.selected_index = shortcut_map[key]
-                        live.update(self._build_display())
+                        live.update(self._build_display(), refresh=True)
                         return self.options[self.selected_index][1]
 
         except KeyboardInterrupt:
             return self.options[-1][1]  # Return cancel/last option
+
+    def _run_simple(self) -> str:
+        """
+        Run a simple text-based selector (fallback for VS Code terminal).
+
+        Returns:
+            The value of the selected option
+        """
+        # Display the options
+        console.print()
+        console.print(f"[bold yellow]{self.title}[/bold yellow]")
+        if self.subtitle:
+            console.print(f"[dim]{self.subtitle}[/dim]")
+        console.print()
+
+        for i, (label, value, shortcut, color) in enumerate(self.options):
+            console.print(f"  [{color}]{shortcut.upper()}[/] {label}")
+
+        console.print()
+
+        # Prompt for input
+        shortcuts = "/".join(opt[2].upper() for opt in self.options)
+        while True:
+            try:
+                choice = prompt(f"Choose ({shortcuts}): ").strip().lower()
+
+                # Check if input matches a shortcut
+                for label, value, shortcut, color in self.options:
+                    if choice == shortcut.lower():
+                        return value
+
+                console.print("[red]Invalid choice. Please try again.[/red]")
+            except (KeyboardInterrupt, EOFError):
+                return self.options[-1][1]  # Return cancel/last option
 
 # Track temp directories for cleanup on exit
 _temp_dirs_to_cleanup = set()

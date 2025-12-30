@@ -180,28 +180,25 @@ class InteractiveSession:
         self._print_goodbye()
 
     def _print_welcome(self):
-        """Print welcome screen with clean design."""
+        """Print welcome screen with clean, minimal design."""
         # Get model and config info
         model_name = getattr(self.config, 'model', 'default')
         cwd = os.getcwd()
 
-        # Create welcome panel with cyan border
-        welcome_text = (
-            f"[bold white]Vishwa[/bold white] - Agentic Coding Assistant\n"
-            f"[ansibrightblack]Model: {model_name} | Context: 0 files[/ansibrightblack]"
-        )
+        # Shorten working directory for display
+        home = str(Path.home())
+        if cwd.startswith(home):
+            display_cwd = "~" + cwd[len(home):]
+        else:
+            display_cwd = cwd
 
-        panel = Panel(
-            welcome_text,
-            border_style="cyan",
-            padding=(0, 1),
-        )
-
+        # Clean header - similar to Claude Code style
         self.console.print()
-        self.console.print(panel)
-        self.console.print(f"\n[ansibrightblack]Working directory:[/ansibrightblack] {cwd}")
-        self.console.print("[ansibrightblack]Type /help for commands or start chatting[/ansibrightblack]")
+        self.console.print(f"[bold cyan]Vishwa[/bold cyan] [dim]- Agentic Coding Assistant[/dim]")
+        self.console.print(f"[dim]{model_name}[/dim]")
+        self.console.print(f"[dim]{display_cwd}[/dim]")
         self.console.print()
+        self.console.print("[dim]Type /help for commands[/dim]")
 
     def _print_goodbye(self):
         """Print goodbye message."""
@@ -220,37 +217,23 @@ class InteractiveSession:
         """
         Get user input with styled prompt.
 
+        Simple, clean design inspired by Claude Code:
+        - Horizontal separator line above
+        - Simple `>` prompt
+
         Returns:
             User input string
         """
-        # Build a visually prominent prompt
-        files_count = len(self.agent.context.files_in_context)
-        model_name = getattr(self.agent.llm, 'model_name', 'default')
+        # Get terminal width
+        terminal_width = self.console.width or 80
+        separator_line = "─" * terminal_width
 
-        # Shorten model name for display
-        short_model = model_name.split('/')[-1]  # Remove provider prefix if any
-        if len(short_model) > 20:
-            short_model = short_model[:17] + "..."
-
-        # Build prompt with visual hierarchy
-        # Format: ╭─ vishwa ──────────────────────────────────
-        #         │ model: claude-sonnet | files: 3
-        #         ╰─▶
-
-        # Show a visual separator line before prompt
+        # Print separator line (full width)
         self.console.print()
-        self.console.print("[cyan]╭─[/cyan] [bold white]vishwa[/bold white] [cyan]" + "─" * 40 + "[/cyan]")
+        self.console.print(f"[dim]{separator_line}[/dim]")
 
-        # Status line with model and context
-        status_parts = []
-        status_parts.append(f"[dim]model:[/dim] [green]{short_model}[/green]")
-        if files_count > 0:
-            status_parts.append(f"[dim]files:[/dim] [#8b5cf6]{files_count}[/#8b5cf6]")
-        status_line = " [dim]│[/dim] ".join(status_parts)
-        self.console.print(f"[cyan]│[/cyan] {status_line}")
-
-        # The actual input prompt with arrow
-        prompt_text = HTML('<prompt-symbol>╰─▶</prompt-symbol> ')
+        # Simple prompt - just `>`
+        prompt_text = HTML('<prompt-symbol>></prompt-symbol> ')
 
         return self.prompt_session.prompt(prompt_text)
 
