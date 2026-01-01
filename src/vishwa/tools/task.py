@@ -69,7 +69,7 @@ class TaskTool(Tool):
     multi-round autonomous search instead of single grep/glob calls.
     """
 
-    def __init__(self, llm, tool_registry, storage_dir: str = "~/.vishwa/subagents"):
+    def __init__(self, llm, tool_registry, storage_dir: str = "~/.vishwa/subagents", context_store=None):
         """
         Initialize Task tool.
 
@@ -77,10 +77,12 @@ class TaskTool(Tool):
             llm: LLM instance to use for sub-agents
             tool_registry: Main tool registry (to get tools for sub-agents)
             storage_dir: Directory for storing detailed sub-agent findings
+            context_store: Optional ContextStore for sharing context with sub-agents
         """
         self.llm = llm
         self.tool_registry = tool_registry
         self.storage = SubAgentStorage(storage_dir)
+        self.context_store = context_store
 
     @property
     def name(self) -> str:
@@ -167,6 +169,7 @@ Multi-step tasks that require iteration should NOT be done manually - delegate t
 - Test: Agent specialized for writing and understanding tests
 - Refactor: Agent for code improvement and restructuring
 - Documentation: Agent for generating documentation
+- CodeReview: Agent for comprehensive code review with severity levels. Identifies CRITICAL issues (SOLID violations, security, bugs) and MEDIUM issues (code smells, missing error handling). (Tools: read_file, grep, glob, goto_definition, find_references)
 
 ## Pre-built Templates
 
@@ -187,7 +190,7 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
             "properties": {
                 "subagent_type": {
                     "type": "string",
-                    "enum": ["Explore", "Plan", "Test", "Refactor", "Documentation"],
+                    "enum": ["Explore", "Plan", "Test", "Refactor", "Documentation", "CodeReview"],
                     "description": "The type of specialized agent to use for this task",
                 },
                 "prompt": {
@@ -256,11 +259,21 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
             tools = ["grep", "glob", "read_file"]
             max_iterations = 10
 
+        elif subagent_type == "CodeReview":
+            # Get context from store for code review (modified files, their content, imports)
+            review_context = None
+            if self.context_store:
+                review_context = self.context_store.get_context_for_review()
+
+            system_prompt = self._build_code_review_prompt(task_prompt, thoroughness, review_context)
+            tools = ["read_file", "grep", "glob", "goto_definition", "find_references"]
+            max_iterations = 15
+
         else:
             return ToolResult(
                 success=False,
                 error=f"Unknown subagent_type: {subagent_type}",
-                suggestion="Use 'Explore', 'Plan', 'Test', 'Refactor', or 'Documentation'",
+                suggestion="Use 'Explore', 'Plan', 'Test', 'Refactor', 'Documentation', or 'CodeReview'",
             )
 
         try:
@@ -629,4 +642,167 @@ Brief overview of documentation work
 
 ## Gaps and Recommendations
 - Documentation gaps and future work needed
+"""
+
+    def _build_code_review_prompt(self, task: str, thoroughness: str, review_context: dict = None) -> str:
+        """Build system prompt for CodeReview agent with injected context."""
+
+        # Build context section if we have cached context
+        context_section = ""
+        if review_context and review_context.get("modified_files"):
+            context_section = """
+═══════════════════════════════════════════════════════════════
+CONTEXT: FILES MODIFIED IN THIS SESSION
+═══════════════════════════════════════════════════════════════
+
+The following files were modified during this session and should be reviewed:
+
+"""
+            for file_path in review_context["modified_files"]:
+                context_section += f"- {file_path}\n"
+
+            # Add file contents if available
+            if review_context.get("file_contents"):
+                context_section += "\n--- FILE CONTENTS ---\n"
+                for path, content in review_context["file_contents"].items():
+                    # Limit content to avoid token explosion
+                    lines = content.split("\n")
+                    if len(lines) > 200:
+                        content = "\n".join(lines[:200]) + f"\n\n... [{len(lines) - 200} more lines truncated]"
+
+                    context_section += f"\n### {path}\n```\n{content}\n```\n"
+
+            # Add imports info
+            if review_context.get("imports"):
+                context_section += "\n--- IMPORTS (for understanding dependencies) ---\n"
+                for path, imports in review_context["imports"].items():
+                    if imports:
+                        context_section += f"\n{path} imports: {', '.join(imports)}\n"
+
+            context_section += "\n"
+
+        return f"""You are a CodeReview agent - specialized for comprehensive code review with severity-based issue categorization.
+{context_section}
+YOUR TASK:
+{task}
+
+TOOLS AVAILABLE:
+- read_file: Read file contents
+- grep: Search file contents with regex
+- glob: Find files by pattern
+- goto_definition: Jump to where a symbol is defined (LSP)
+- find_references: Find all usages of a symbol (LSP)
+
+YOUR JOB:
+1. Review the specified code thoroughly
+2. Categorize issues by severity (CRITICAL vs MEDIUM)
+3. Provide specific file:line references for each issue
+4. Suggest concrete fixes for each issue
+5. DO NOT modify code - only review and report
+
+═══════════════════════════════════════════════════════════════
+CRITICAL ISSUES (Must Fix - Block Completion)
+═══════════════════════════════════════════════════════════════
+These issues MUST be fixed before code can be accepted:
+
+- SOLID Principle Violations:
+  * Single Responsibility: Class/function doing too many things
+  * Open/Closed: Requires modification for extension
+  * Liskov Substitution: Subtype not substitutable for base
+  * Interface Segregation: Fat interfaces forcing unused implementations
+  * Dependency Inversion: High-level depending on low-level details
+
+- Security Vulnerabilities:
+  * SQL Injection (unsanitized user input in queries)
+  * XSS (unescaped user content in HTML)
+  * Command Injection (user input in shell commands)
+  * Path Traversal (user input in file paths)
+  * Hardcoded credentials or secrets
+  * Insecure deserialization
+
+- Potential Bugs:
+  * Null/None reference errors
+  * Race conditions
+  * Resource leaks (unclosed files/connections)
+  * Off-by-one errors
+  * Unhandled exceptions in critical paths
+  * Infinite loops or recursion
+
+- Logic Errors:
+  * Incorrect algorithm implementation
+  * Wrong boundary conditions
+  * Inverted boolean logic
+  * Missing validation at system boundaries
+
+- Breaking Changes:
+  * Public API signature changes without deprecation
+  * Backward-incompatible changes to interfaces
+
+═══════════════════════════════════════════════════════════════
+MEDIUM ISSUES (Should Fix - Warn Only)
+═══════════════════════════════════════════════════════════════
+These issues should be addressed but don't block completion:
+
+- Code Smells:
+  * Long methods (>50 lines)
+  * Large classes (>300 lines)
+  * Duplicate code (copy-pasted logic)
+  * Magic numbers/strings (unexplained literals)
+  * Deeply nested conditionals (>3 levels)
+  * God classes/modules (too many responsibilities)
+  * Feature envy (method uses other class's data excessively)
+  * Data clumps (same data groups appearing together)
+
+- Missing Error Handling:
+  * Unhandled exceptions
+  * Silent failures (empty catch blocks)
+  * Missing validation for optional parameters
+
+- Poor Naming:
+  * Non-descriptive variable/function names
+  * Inconsistent naming conventions
+  * Misleading names
+
+- Design Issues:
+  * Tight coupling between modules
+  * Low cohesion within modules
+  * Missing abstractions
+  * Premature optimization
+
+═══════════════════════════════════════════════════════════════
+REVIEW PROCESS
+═══════════════════════════════════════════════════════════════
+
+1. Read the files to review carefully
+2. For each file:
+   a. Check for CRITICAL issues first
+   b. Then check for MEDIUM issues
+   c. Note file:line for each issue
+3. Use goto_definition to understand symbol definitions
+4. Use find_references to check how symbols are used
+5. Consider the broader codebase context
+
+═══════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+═══════════════════════════════════════════════════════════════
+
+When done, signal completion with "Final Answer:" followed by your review.
+
+Final Answer:
+## Code Review Summary
+
+### Critical Issues (Must Fix)
+- [file:line] **Issue Category**: Description of the issue
+  **Suggestion**: How to fix it
+
+### Medium Issues (Should Fix)
+- [file:line] **Issue Category**: Description of the issue
+  **Suggestion**: How to fix it
+
+### Overall Assessment
+Brief summary of code quality (1-2 sentences).
+Rate: GOOD / NEEDS_WORK / CRITICAL_ISSUES
+
+If no critical issues found, state: "No critical issues found."
+If no medium issues found, state: "No medium issues found."
 """

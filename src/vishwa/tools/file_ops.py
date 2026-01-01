@@ -159,6 +159,8 @@ This shows exact spacing including trailing spaces and tabs.
         try:
             # Resolve path
             file_path = Path(path)
+            abs_path = str(file_path.resolve())
+
             if not file_path.exists():
                 return ToolResult(
                     success=False,
@@ -173,9 +175,25 @@ This shows exact spacing including trailing spaces and tabs.
                     suggestion="Provide a file path, not a directory",
                 )
 
-            # Read file
-            with open(file_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            # Try to get from cache first (only for full file reads without special formatting)
+            raw_content = None
+            from_cache = False
+
+            if self.context_store and start_line is None and end_line is None and not show_whitespace:
+                raw_content = self.context_store.get_file(abs_path)
+                if raw_content is not None:
+                    from_cache = True
+
+            # Read file if not cached
+            if raw_content is None:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    raw_content = f.read()
+
+                # Store in cache for future reads
+                if self.context_store:
+                    self.context_store.store_file(abs_path, raw_content)
+
+            lines = raw_content.splitlines(keepends=True)
 
             # Apply line range if specified
             total_lines = len(lines)
@@ -244,6 +262,7 @@ This shows exact spacing including trailing spaces and tabs.
                     "lines_read": len(lines),
                     "start_line": line_offset + 1,
                     "end_line": line_offset + len(lines),
+                    "from_cache": from_cache,
                 },
             )
 
@@ -450,6 +469,10 @@ WHEN NOT TO USE (use write_file or multi_edit instead):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
+            # Invalidate cache for this file
+            if self.context_store:
+                self.context_store.invalidate(str(path.resolve()))
+
             # Calculate diff stats
             old_lines = len(old_str.splitlines())
             new_lines = len(new_str.splitlines())
@@ -627,6 +650,10 @@ IMPORTANT:
             # Write file
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
+
+            # Invalidate cache for this file
+            if self.context_store:
+                self.context_store.invalidate(str(path.resolve()))
 
             lines = len(content.splitlines())
             chars = len(content)
@@ -826,6 +853,10 @@ This is more efficient than multiple str_replace calls and ensures atomicity.
             # Write the new content
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new_content)
+
+            # Invalidate cache for this file
+            if self.context_store:
+                self.context_store.invalidate(str(path.resolve()))
 
             # Calculate which lines were modified for targeted quality checks
             modified_lines = _calculate_modified_lines(old_content, new_content)

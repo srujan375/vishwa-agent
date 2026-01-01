@@ -70,6 +70,11 @@ from vishwa.utils.logger import logger
     help="Number of repeated tool calls before detecting loop (default: 15)",
     type=int,
 )
+@click.option(
+    "--skip-review",
+    is_flag=True,
+    help="Skip code review before completion",
+)
 @click.pass_context
 def main(
     ctx,
@@ -83,6 +88,7 @@ def main(
     log_json: bool,
     no_log: bool,
     loop_threshold: int,
+    skip_review: bool,
 ):
     """
     Vishwa - Terminal-based Agentic Coding Assistant
@@ -99,6 +105,14 @@ def main(
     """
     # Load environment variables
     load_dotenv()
+
+    # Load config from environment
+    from vishwa.config import Config
+    config = Config()
+
+    # Merge CLI options with config (CLI takes precedence)
+    # For flags, CLI only overrides if explicitly set (flag is True)
+    effective_skip_review = skip_review or config.skip_review
 
     # Configure logging (enabled by default unless --no-log is used)
     logger.configure(
@@ -124,6 +138,7 @@ def main(
                 auto_approve=auto_approve,
                 verbose=verbose,
                 loop_threshold=loop_threshold,
+                skip_review=effective_skip_review,
             )
             sys.exit(0)
         return
@@ -149,6 +164,7 @@ def main(
             auto_approve=auto_approve,
             verbose=verbose,
             loop_detection_threshold=loop_threshold,
+            skip_review=effective_skip_review,
         )
 
         # Show task
@@ -187,6 +203,7 @@ def _run_interactive(
     auto_approve: bool,
     verbose: bool,
     loop_threshold: int = 15,
+    skip_review: bool = False,
 ):
     """
     Run Vishwa in interactive REPL mode.
@@ -197,6 +214,7 @@ def _run_interactive(
         auto_approve: Auto-approve flag
         verbose: Verbose output
         loop_threshold: Loop detection threshold
+        skip_review: Skip code review before completion
     """
     from vishwa.cli.interactive import InteractiveSession
     from vishwa.config import Config
@@ -227,6 +245,7 @@ def _run_interactive(
             auto_approve=auto_approve,
             verbose=True,  # Show tool execution and progress
             loop_detection_threshold=loop_threshold,
+            skip_review=skip_review,
         )
 
         # Start interactive session

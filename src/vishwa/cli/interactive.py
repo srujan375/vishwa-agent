@@ -114,6 +114,7 @@ class InteractiveSession:
             'model': 'Switch LLM model',
             'models': 'List available models',
             'ollama': 'Manage Ollama models',
+            'review': 'Toggle code review on/off',
         }
         command_completer = CommandCompleter(command_descriptions)
 
@@ -366,6 +367,7 @@ class InteractiveSession:
             'model': self._cmd_model,
             'models': self._cmd_models,
             'ollama': self._cmd_ollama,
+            'review': self._cmd_review,
         }
 
     # Command handlers
@@ -387,6 +389,7 @@ class InteractiveSession:
         table.add_row("/model <name>", "Switch LLM model")
         table.add_row("/models", "List available models")
         table.add_row("/ollama [list|pull <model>]", "Manage Ollama models")
+        table.add_row("/review", "Toggle code review on/off")
 
         self.console.print(table)
         self.console.print()
@@ -593,3 +596,21 @@ class InteractiveSession:
             self.console.print(f"[red]✗ Unknown ollama subcommand: {args[0]}[/red]")
             self.console.print("[dim]Usage: /ollama [list|pull <model>][/dim]")
             self.console.print()
+
+    def _cmd_review(self, args: List[str]):
+        """Toggle code review on/off."""
+        self.console.print()
+
+        # Toggle the skip_review flag
+        current_state = getattr(self.agent, 'skip_review', False)
+        new_state = not current_state
+        self.agent.skip_review = new_state
+
+        if new_state:
+            self.console.print("[yellow]⚠ Code review disabled[/yellow]")
+            self.console.print("[dim]Code will not be reviewed before completion[/dim]")
+        else:
+            self.console.print("[green]✓ Code review enabled[/green]")
+            self.console.print("[dim]Code will be reviewed for critical and medium issues[/dim]")
+
+        self.console.print()

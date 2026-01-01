@@ -7,7 +7,10 @@ All tools use OpenAI's function calling format internally.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from vishwa.agent.context_store import ContextStore
 
 
 @dataclass
@@ -40,6 +43,9 @@ class Tool(ABC):
     - parameters: JSON Schema (OpenAI format)
     - execute: The actual tool logic
     """
+
+    # Optional context store for caching (set by ToolRegistry)
+    context_store: Optional["ContextStore"] = None
 
     @property
     @abstractmethod
@@ -323,6 +329,18 @@ class ToolRegistry:
     def all(self) -> List[Tool]:
         """Get all registered tools"""
         return list(self._tools.values())
+
+    def set_context_store(self, context_store: "ContextStore") -> None:
+        """
+        Set the context store on all registered tools.
+
+        This enables transparent caching for file reads, searches, and globs.
+
+        Args:
+            context_store: The session-scoped context store
+        """
+        for tool in self._tools.values():
+            tool.context_store = context_store
 
     def to_openai_format(self) -> List[Dict[str, Any]]:
         """Convert all tools to OpenAI format for LLM"""

@@ -150,6 +150,46 @@ Parameters:
         # Combine default and custom excludes
         excludes = DEFAULT_EXCLUDES | extra_excludes
 
+        # Check cache first (only for default params without extra excludes)
+        cache_key_path = str(base_path)
+        from_cache = False
+
+        if self.context_store and not extra_excludes and not include_hidden:
+            cached = self.context_store.get_glob(pattern, cache_key_path)
+            if cached is not None:
+                # Apply head_limit to cached results
+                files = cached[:head_limit] if head_limit else cached
+                truncated = len(cached) > head_limit if head_limit else False
+
+                if not files:
+                    return ToolResult(
+                        success=True,
+                        output=f"No files found matching pattern: {pattern}",
+                        metadata={
+                            "pattern": pattern,
+                            "base_path": cache_key_path,
+                            "count": 0,
+                            "from_cache": True,
+                        },
+                    )
+
+                file_list = "\n".join(files)
+                if truncated:
+                    file_list += f"\n... (limited to {head_limit} results)"
+
+                return ToolResult(
+                    success=True,
+                    output=file_list,
+                    metadata={
+                        "pattern": pattern,
+                        "base_path": cache_key_path,
+                        "count": len(files),
+                        "truncated": truncated,
+                        "files": files,
+                        "from_cache": True,
+                    },
+                )
+
         try:
             if not base_path.exists():
                 return ToolResult(
@@ -209,11 +249,18 @@ Parameters:
 
             # Format output with relative paths
             try:
-                file_list = "\n".join(str(p.relative_to(base_path)) for p in matches)
+                relative_paths = [str(p.relative_to(base_path)) for p in matches]
+                file_list = "\n".join(relative_paths)
             except ValueError:
-                file_list = "\n".join(str(p) for p in matches)
+                relative_paths = [str(p) for p in matches]
+                file_list = "\n".join(relative_paths)
 
             truncated = len(matches) >= head_limit
+
+            # Store in cache (store all found files, not just head_limit)
+            if self.context_store and not extra_excludes and not include_hidden:
+                self.context_store.store_glob(pattern, cache_key_path, relative_paths)
+
             if truncated:
                 file_list += f"\n... (limited to {head_limit} results)"
 
@@ -225,7 +272,8 @@ Parameters:
                     "base_path": str(base_path),
                     "count": len(matches),
                     "truncated": truncated,
-                    "files": [str(p) for p in matches],
+                    "files": relative_paths,
+                    "from_cache": False,
                 },
             )
 
@@ -362,6 +410,46 @@ Parameters:
         case_sensitive = kwargs.get("case_sensitive", True)
         extra_excludes = kwargs.get("exclude", [])
 
+        # Build cache key flags
+        cache_flags = f"glob={glob_pattern or ''},mode={output_mode},case={case_sensitive}"
+
+        # Check cache first (only for simple searches without extra excludes)
+        if self.context_store and not extra_excludes and context == 0:
+            cached = self.context_store.get_search(pattern, str(base_path), cache_flags)
+            if cached is not None:
+                # Apply head_limit to cached results
+                results = cached[:head_limit] if head_limit else cached
+                truncated = len(cached) > head_limit if head_limit else False
+
+                if not results:
+                    return ToolResult(
+                        success=True,
+                        output=f"No matches found for pattern: {pattern}",
+                        metadata={
+                            "pattern": pattern,
+                            "matches": 0,
+                            "backend": "ripgrep",
+                            "from_cache": True,
+                        },
+                    )
+
+                output = "\n".join(results)
+                if truncated:
+                    output += f"\n... (limited to {head_limit} results)"
+
+                return ToolResult(
+                    success=True,
+                    output=output,
+                    metadata={
+                        "pattern": pattern,
+                        "matches": len(results),
+                        "output_mode": output_mode,
+                        "truncated": truncated,
+                        "backend": "ripgrep",
+                        "from_cache": True,
+                    },
+                )
+
         try:
             if not base_path.exists():
                 return ToolResult(
@@ -452,6 +540,7 @@ Parameters:
                 output = "\n".join(lines) + f"\n... (limited to {head_limit} results)"
 
             # Make paths relative if possible
+            relative_lines = lines  # Default to original
             try:
                 relative_lines = []
                 for line in lines:
@@ -470,21 +559,27 @@ Parameters:
                             relative_lines.append(str(rel_path))
                         except ValueError:
                             relative_lines.append(line)
-                output = "\n".join(relative_lines)
-                if truncated:
-                    output += f"\n... (limited to {head_limit} results)"
             except Exception:
-                pass  # Keep original output if relativization fails
+                relative_lines = lines  # Keep original if relativization fails
+
+            # Store in cache (store all results, not just head_limit)
+            if self.context_store and not extra_excludes and context == 0:
+                self.context_store.store_search(pattern, str(base_path), relative_lines, cache_flags)
+
+            output = "\n".join(relative_lines[:head_limit] if head_limit else relative_lines)
+            if truncated:
+                output += f"\n... (limited to {head_limit} results)"
 
             return ToolResult(
                 success=True,
                 output=output,
                 metadata={
                     "pattern": pattern,
-                    "matches": len(lines),
+                    "matches": len(relative_lines[:head_limit] if head_limit else relative_lines),
                     "output_mode": output_mode,
                     "truncated": truncated,
                     "backend": "ripgrep",
+                    "from_cache": False,
                 },
             )
 

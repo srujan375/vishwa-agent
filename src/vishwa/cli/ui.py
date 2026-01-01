@@ -1026,3 +1026,73 @@ def create_subagent_spinner(subagent_type: str, description: str):
         console=console,
         transient=True,
     )
+
+
+# =============================================================================
+# PRE-COMPLETION REVIEW INDICATORS
+# =============================================================================
+
+def print_pre_completion_review(file_count: int) -> None:
+    """
+    Print indicator that pre-completion code review is starting.
+
+    Args:
+        file_count: Number of Python files being reviewed
+    """
+    console.print()
+    console.print(f"[cyan]Running code review on {file_count} modified file(s)...[/cyan]")
+
+
+def print_pre_completion_issues(fix_attempt: int, max_attempts: int) -> None:
+    """
+    Print indicator that pre-completion review found issues and is attempting fixes.
+
+    Args:
+        fix_attempt: Current fix attempt number
+        max_attempts: Maximum fix attempts allowed
+    """
+    console.print()
+    console.print(f"[yellow]⚠ Code review found issues - attempting fix ({fix_attempt}/{max_attempts})[/yellow]")
+
+
+def print_pre_completion_passed() -> None:
+    """Print indicator that pre-completion review passed with no issues."""
+    console.print("[green]✓ Code review passed - no critical or medium issues found[/green]")
+    console.print()
+
+
+# =============================================================================
+# CODE QUALITY CHECK INDICATORS
+# =============================================================================
+
+def print_quality_check_start(file_path: str) -> None:
+    """
+    Print indicator that code quality check is starting for a file.
+
+    Args:
+        file_path: Path to the file being checked
+    """
+    console.print(f"[dim]Checking code quality: {file_path}[/dim]")
+
+
+def print_quality_passed(file_path: str) -> None:
+    """
+    Print indicator that code quality check passed.
+
+    Args:
+        file_path: Path to the file that passed
+    """
+    console.print(f"[green]✓ Quality check passed: {file_path}[/green]")
+
+
+def print_quality_issues(file_path: str, issues_count: int, errors: int, warnings: int) -> None:
+    """
+    Print code quality issues found in a file.
+
+    Args:
+        file_path: Path to the file with issues
+        issues_count: Total number of issues
+        errors: Number of errors
+        warnings: Number of warnings
+    """
+    console.print(f"[yellow]⚠ Quality issues in {file_path}: {issues_count} issues ({errors} errors, {warnings} warnings)[/yellow]")
