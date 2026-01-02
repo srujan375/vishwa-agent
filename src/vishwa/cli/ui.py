@@ -163,7 +163,7 @@ class InlineSelector:
         # Help text
         lines.append(Text(""))
         help_text = Text()
-        help_text.append("← → ", style="cyan bold")
+        help_text.append("<- -> ", style="cyan bold")
         help_text.append("navigate  ", style="dim")
         help_text.append("Enter ", style="cyan bold")
         help_text.append("select  ", style="dim")
@@ -599,7 +599,7 @@ def print_quality_check_start(file_path: str) -> None:
 
 def print_quality_passed(file_path: str) -> None:
     """Print message when quality check passes."""
-    console.print(f"  [green]✓[/green] [dim]Looks good[/dim]")
+    console.print(f"  [green][ok][/green] [dim]Looks good[/dim]")
 
 
 def print_quality_issues(
@@ -648,7 +648,7 @@ def print_pre_completion_issues(attempt: int, max_attempts: int) -> None:
 
 def print_pre_completion_passed() -> None:
     """Print message when pre-completion review passes."""
-    console.print(f"  [green]✓[/green] [dim]Looks good[/dim]")
+    console.print(f"  [green][ok][/green] [dim]Looks good[/dim]")
 
 
 def show_diff(filepath: str, old: str, new: str) -> None:
@@ -762,9 +762,9 @@ def confirm_action(message: str, default: bool = False) -> bool:
 
         # Show confirmation message
         if result:
-            console.print("[green]✓ Approved[/green]")
+            console.print("[green][ok] Approved[/green]")
         else:
-            console.print("[red]✗ Rejected[/red]")
+            console.print("[red][x] Rejected[/red]")
 
         console.print()
 
@@ -816,13 +816,13 @@ def confirm_file_change(filepath: str, action: str = "apply changes") -> str:
 
         # Show confirmation message
         if result == 'approve':
-            console.print("[green]✓ Changes approved[/green]")
+            console.print("[green][ok] Changes approved[/green]")
         elif result == 'reject':
-            console.print("[red]✗ Changes rejected[/red]")
+            console.print("[red][x] Changes rejected[/red]")
         elif result == 'edit':
-            console.print("[yellow]✎ Opening for edit[/yellow]")
+            console.print("[yellow][*] Opening for edit[/yellow]")
         else:
-            console.print("[dim]⊗ Cancelled[/dim]")
+            console.print("[dim][-] Cancelled[/dim]")
 
         console.print()
 
@@ -849,7 +849,7 @@ def show_result_table(result: any) -> None:
     table.add_column("Attribute", style="cyan", no_wrap=True)
     table.add_column("Value", style="white")
 
-    table.add_row("Success", "✓ Yes" if result.success else "✗ No")
+    table.add_row("Success", "[ok] Yes" if result.success else "[x] No")
     table.add_row("Message", result.message)
     table.add_row("Iterations Used", str(result.iterations_used))
     table.add_row("Stop Reason", result.stop_reason)
@@ -972,7 +972,7 @@ def print_subagent_start(subagent_type: str, description: str, thoroughness: str
         thoroughness: Thoroughness level (quick, medium, very thorough)
     """
     config = SUBAGENT_CONFIGS.get(subagent_type, {
-        "icon": "🤖",
+        "icon": ">",
         "color": "white",
         "description": "Running task",
     })
@@ -1015,7 +1015,7 @@ def print_subagent_progress(iteration: int, max_iterations: int, status: str = "
     # Create progress bar
     progress_width = 20
     filled = int((iteration / max_iterations) * progress_width)
-    bar = "█" * filled + "░" * (progress_width - filled)
+    bar = "#" * filled + "-" * (progress_width - filled)
 
     progress_text = f"  [dim]Progress: [{bar}] {iteration}/{max_iterations}[/dim]"
     if status:
@@ -1062,7 +1062,7 @@ def print_subagent_complete(
     completion_text.append(f" | {iterations_used} iterations", style="dim")
 
     if stop_reason:
-        completion_text.append(f" • {stop_reason}", style="dim italic")
+        completion_text.append(f" | {stop_reason}", style="dim italic")
 
     console.print(completion_text)
     console.print()
@@ -1113,12 +1113,12 @@ def print_pre_completion_issues(fix_attempt: int, max_attempts: int) -> None:
         max_attempts: Maximum fix attempts allowed
     """
     console.print()
-    console.print(f"[yellow]⚠ Code review found issues - attempting fix ({fix_attempt}/{max_attempts})[/yellow]")
+    console.print(f"[yellow][!] Code review found issues - attempting fix ({fix_attempt}/{max_attempts})[/yellow]")
 
 
 def print_pre_completion_passed() -> None:
     """Print indicator that pre-completion review passed with no issues."""
-    console.print("[green]✓ Code review passed - no critical or medium issues found[/green]")
+    console.print("[green][ok] Code review passed - no critical or medium issues found[/green]")
     console.print()
 
 
@@ -1143,7 +1143,7 @@ def print_quality_passed(file_path: str) -> None:
     Args:
         file_path: Path to the file that passed
     """
-    console.print(f"[green]✓ Quality check passed: {file_path}[/green]")
+    console.print(f"[green][ok] Quality check passed: {file_path}[/green]")
 
 
 def print_quality_issues(file_path: str, issues_count: int, errors: int, warnings: int) -> None:
@@ -1156,4 +1156,4 @@ def print_quality_issues(file_path: str, issues_count: int, errors: int, warning
         errors: Number of errors
         warnings: Number of warnings
     """
-    console.print(f"[yellow]⚠ Quality issues in {file_path}: {issues_count} issues ({errors} errors, {warnings} warnings)[/yellow]")
+    console.print(f"[yellow][!] Quality issues in {file_path}: {issues_count} issues ({errors} errors, {warnings} warnings)[/yellow]")
