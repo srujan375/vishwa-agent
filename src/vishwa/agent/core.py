@@ -99,6 +99,9 @@ class VishwaAgent:
         self.task = ""
         self._quality_fix_attempts = 0
         self._max_quality_fix_attempts = 3  # Max times to request quality fixes
+        self._pending_quality_issues: list[tuple[str, str]] = []  # (file_path, issues)
+        self._file_quality_attempts: dict[str, int] = {}  # Track attempts per file
+        self._max_file_quality_attempts = 2  # Max fix attempts per file before giving up
 
     def run(self, task: str, clear_context: bool = False) -> AgentResult:
         """
@@ -117,6 +120,8 @@ class VishwaAgent:
         self.iteration = 0
         self.stop_reason = None
         self._quality_fix_attempts = 0  # Reset quality fix counter for new task
+        self._pending_quality_issues.clear()  # Clear any stale issues
+        self._file_quality_attempts.clear()  # Reset per-file attempt tracking
 
         # Log agent start
         logger.agent_start(task, self.max_iterations)
@@ -183,92 +188,15 @@ class VishwaAgent:
 
                         # Check if this seems like a final answer or just mid-task commentary
                         if self._is_final_answer(response):
-                            # Run pre-completion review before accepting final answer
-                            if self.verbose and self.enable_code_review:
-                                from vishwa.cli.ui import (
-                                    print_pre_completion_review,
-                                    print_pre_completion_issues,
-                                    print_pre_completion_passed,
-                                )
-                                py_files = [
-                                    m.file_path for m in self.context.modifications
-                                    if m.file_path.endswith(".py")
-                                ]
-                                if py_files:
-                                    print_pre_completion_review(len(set(py_files)))
-
-                            critical_issues, medium_issues = self._run_pre_completion_review()
-
-                            # Handle CRITICAL issues - block completion and request fixes
-                            if critical_issues and self._quality_fix_attempts < self._max_quality_fix_attempts:
-                                self._quality_fix_attempts += 1
-                                logger.agent_decision(
-                                    "continue",
-                                    f"critical issues found (attempt {self._quality_fix_attempts}/{self._max_quality_fix_attempts})"
-                                )
-                                if self.verbose:
-                                    print_pre_completion_issues(
-                                        self._quality_fix_attempts,
-                                        self._max_quality_fix_attempts
-                                    )
-                                self.context.add_message("assistant", response.content or "")
-                                self.context.add_message(
-                                    "user",
-                                    f"[Code Quality Review - CRITICAL Issues Found]\n\n"
-                                    f"The code has CRITICAL issues that MUST be fixed before completing.\n\n"
-                                    f"CRITICAL ISSUES:\n{critical_issues}\n\n"
-                                    f"INSTRUCTIONS:\n"
-                                    f"1. Fix ALL critical issues listed above\n"
-                                    f"2. Use multi_edit or str_replace to make the fixes\n"
-                                    f"3. After fixing, confirm the task is complete."
-                                )
-                                continue
-
-                            if critical_issues:
-                                # Max attempts reached for critical issues
-                                logger.agent_decision("stop", "max quality fix attempts reached")
-                                return AgentResult(
-                                    success=True,
-                                    message=(response.content or "Task completed") +
-                                        f"\n\n[Warning: Critical code quality issues remain unfixed after {self._max_quality_fix_attempts} attempts]",
-                                    iterations_used=self.iteration,
-                                    modifications=self.context.modifications,
-                                    stop_reason="final_answer",
-                                )
-
-                            # Handle MEDIUM issues - ask user if they want to fix
-                            if medium_issues and self.verbose:
-                                from vishwa.cli.ui import confirm_action
-                                print(f"\n[Code Review] Medium issues found:\n{medium_issues}")
-                                if confirm_action("Fix medium issues before completing?", default=False):
-                                    self.context.add_message("assistant", response.content or "")
-                                    self.context.add_message(
-                                        "user",
-                                        f"[Code Quality Review - Medium Issues to Fix]\n\n"
-                                        f"Please fix these medium-severity issues:\n\n"
-                                        f"{medium_issues}\n\n"
-                                        f"After fixing, confirm the task is complete."
-                                    )
-                                    continue
-                                # User chose not to fix - continue to completion with warning
-
-                            if self.verbose and self.enable_code_review:
-                                py_files = [
-                                    m.file_path for m in self.context.modifications
-                                    if m.file_path.endswith(".py")
-                                ]
-                                if py_files:
-                                    print_pre_completion_passed()
+                            # NOTE: Pre-completion review disabled - CodeReview sub-agent was
+                            # hallucinating issues. Post-edit checks (with line filtering) still active.
 
                             # This is the final answer
                             self.stop_reason = "final_answer"
                             logger.agent_decision("stop", "final answer (no tools)")
-                            final_message = response.content
-                            if medium_issues:
-                                final_message = (final_message or "Task completed") + f"\n\n[Note: Some medium-severity issues were not fixed]"
                             return AgentResult(
                                 success=True,
-                                message=final_message,
+                                message=response.content,
                                 iterations_used=self.iteration,
                                 modifications=self.context.modifications,
                                 stop_reason="final_answer",
@@ -304,90 +232,11 @@ class VishwaAgent:
 
                 # Step 4: Check if done (Final Answer with tools)
                 if self._is_final_answer(response):
-                    # Run pre-completion review to check for remaining quality issues
-                    if self.verbose and self.enable_code_review:
-                        from vishwa.cli.ui import (
-                            print_pre_completion_review,
-                            print_pre_completion_issues,
-                            print_pre_completion_passed,
-                        )
-                        # Count modified Python files
-                        py_files = [
-                            m.file_path for m in self.context.modifications
-                            if m.file_path.endswith(".py")
-                        ]
-                        if py_files:
-                            print_pre_completion_review(len(set(py_files)))
-
-                    critical_issues, medium_issues = self._run_pre_completion_review()
-
-                    # Handle CRITICAL issues - block completion and request fixes
-                    if critical_issues and self._quality_fix_attempts < self._max_quality_fix_attempts:
-                        self._quality_fix_attempts += 1
-                        logger.agent_decision(
-                            "continue",
-                            f"critical issues found (attempt {self._quality_fix_attempts}/{self._max_quality_fix_attempts})"
-                        )
-
-                        # Show UI feedback
-                        if self.verbose:
-                            print_pre_completion_issues(
-                                self._quality_fix_attempts,
-                                self._max_quality_fix_attempts
-                            )
-
-                        self.context.add_message("assistant", response.content or "")
-                        self.context.add_message(
-                            "user",
-                            f"[Code Quality Review - CRITICAL Issues Found]\n\n"
-                            f"The code has CRITICAL issues that MUST be fixed before completing.\n\n"
-                            f"CRITICAL ISSUES:\n{critical_issues}\n\n"
-                            f"INSTRUCTIONS:\n"
-                            f"1. Fix ALL critical issues listed above\n"
-                            f"2. Use multi_edit or str_replace to make the fixes\n"
-                            f"3. After fixing, confirm the task is complete."
-                        )
-                        continue  # Continue the loop to let LLM fix issues
-
-                    if critical_issues:
-                        # Max attempts reached for critical issues
-                        logger.agent_decision("stop", "max quality fix attempts reached")
-                        return self._finalize_success(
-                            (response.content or "Task completed") +
-                            f"\n\n[Warning: Critical code quality issues remain unfixed after {self._max_quality_fix_attempts} attempts]"
-                        )
-
-                    # Handle MEDIUM issues - ask user if they want to fix
-                    if medium_issues and self.verbose:
-                        from vishwa.cli.ui import confirm_action
-                        print(f"\n[Code Review] Medium issues found:\n{medium_issues}")
-                        if confirm_action("Fix medium issues before completing?", default=False):
-                            self.context.add_message("assistant", response.content or "")
-                            self.context.add_message(
-                                "user",
-                                f"[Code Quality Review - Medium Issues to Fix]\n\n"
-                                f"Please fix these medium-severity issues:\n\n"
-                                f"{medium_issues}\n\n"
-                                f"After fixing, confirm the task is complete."
-                            )
-                            continue
-                        # User chose not to fix - continue to completion with warning
-
-                    # Show passed message
-                    if self.verbose and self.enable_code_review:
-                        py_files = [
-                            m.file_path for m in self.context.modifications
-                            if m.file_path.endswith(".py")
-                        ]
-                        if py_files:
-                            print_pre_completion_passed()
-
+                    # NOTE: Pre-completion review disabled - CodeReview sub-agent was
+                    # hallucinating issues. Post-edit checks (with line filtering) still active.
                     self.stop_reason = "final_answer"
                     logger.agent_decision("stop", "final answer detected")
-                    final_message = response.content or "Task completed"
-                    if medium_issues:
-                        final_message += f"\n\n[Note: Some medium-severity issues were not fixed]"
-                    return self._finalize_success(final_message)
+                    return self._finalize_success(response.content or "Task completed")
 
                 # Step 4: Execute tool calls (Action → Observation)
                 # Execute each tool call
@@ -397,16 +246,36 @@ class VishwaAgent:
                     # Add to context
                     self.context.add_tool_result(tool_call, result)
 
-                # Step 4: Compress files and tool results (token optimization)
+                # Step 4b: Inject quality issues for immediate fix (if any)
+                if self._pending_quality_issues:
+                    issues_text = "\n\n".join(
+                        f"**{file_path}:**\n{issues}"
+                        for file_path, issues in self._pending_quality_issues
+                    )
+                    self.context.add_message(
+                        "user",
+                        f"[Code Quality Issues - Fix ALL in ONE Edit]\n\n"
+                        f"{issues_text}\n\n"
+                        f"IMPORTANT: Fix ALL issues above in a SINGLE edit using str_replace or multi_edit.\n"
+                        f"Common fixes:\n"
+                        f"- Remove unused imports\n"
+                        f"- Use `list` instead of `List`, `dict` instead of `Dict` (modern Python)\n"
+                        f"- Sort imports: stdlib first, then third-party, then local\n"
+                        f"- Add type hints where missing\n\n"
+                        f"Do NOT explain - just fix the code."
+                    )
+                    self._pending_quality_issues.clear()
+
+                # Step 5: Compress files and tool results (token optimization)
                 # After the LLM has seen content, we replace with compact summaries.
                 # Modified files keep full content. Recent read_file results kept intact.
                 self.context.compress_unmodified_files()
                 self.context.compress_old_tool_results(keep_recent=3)
 
-                # Step 5: Prune context if still approaching limit
+                # Step 6: Prune context if still approaching limit
                 self.context.prune_if_needed()
 
-                # Step 6: Check stopping conditions
+                # Step 7: Check stopping conditions
                 if self._should_stop():
                     logger.agent_decision("stop", f"stopping condition met: {self.stop_reason}")
                     return self._finalize_success("Stopping conditions met")
@@ -627,10 +496,10 @@ class VishwaAgent:
                 )
 
             # Post-edit quality check for Python files (if enabled)
-            # Only show UI feedback here - actual enforcement happens at pre-completion
+            # Skip temp/test scripts to avoid unnecessary review overhead
             if self.enable_code_review and result.success and tool_name in ("str_replace", "write_file", "multi_edit"):
                 file_path = arguments.get("path", "")
-                if file_path.endswith(".py"):
+                if file_path.endswith(".py") and not self._should_skip_quality_check(file_path):
                     # Show UI feedback for quality check (user visibility only)
                     if self.verbose:
                         from vishwa.cli.ui import (
@@ -655,16 +524,32 @@ class VishwaAgent:
                             if self.verbose:
                                 print_quality_passed(file_path)
                         else:
-                            # Show issues to user but DON'T inject into LLM context
-                            # Issues will be batched at pre-completion review
+                            # Show issues to user AND store for immediate fix
+                            metadata = quality_result.metadata or {}
                             if self.verbose:
-                                metadata = quality_result.metadata or {}
                                 print_quality_issues(
                                     file_path,
                                     metadata.get("issues_count", 0),
                                     metadata.get("errors", 0),
-                                    metadata.get("warnings", 0)
+                                    metadata.get("warnings", 0),
+                                    metadata.get("issues")
                                 )
+                            # Only inject issues for actual ERRORS (not warnings/style issues)
+                            # This prevents wasting iterations on minor style fixes like import sorting
+                            error_count = metadata.get("errors", 0)
+                            if error_count > 0:
+                                attempts = self._file_quality_attempts.get(file_path, 0)
+                                if attempts < self._max_file_quality_attempts:
+                                    self._file_quality_attempts[file_path] = attempts + 1
+                                    self._pending_quality_issues.append(
+                                        (file_path, quality_result.error)
+                                    )
+                                elif attempts == self._max_file_quality_attempts:
+                                    # First time hitting limit - log it and stop retrying
+                                    self._file_quality_attempts[file_path] = attempts + 1
+                                    if self.verbose:
+                                        from vishwa.cli.ui import print_warning
+                                        print_warning(f"Skipping further quality fixes for {os.path.basename(file_path)} (max attempts reached)")
 
             # Show tool result to user
             if self.verbose:
@@ -719,7 +604,7 @@ class VishwaAgent:
             logger.warning("agent", f"Code quality check failed: {str(e)}")
             return None
 
-    def _run_pre_completion_review(self) -> tuple[Optional[str], Optional[str]]:
+    def _run_pre_completion_review(self) -> Optional[str]:
         """
         Run a final code quality review on all modified Python files.
 
@@ -733,10 +618,11 @@ class VishwaAgent:
             return None, None
 
         # Get all modified Python files
+        # Modifications are Modification objects with file_path attribute
         py_files = [
             mod.file_path
             for mod in self.context.modifications
-            if mod.file_path.endswith(".py")
+            if mod.file_path.endswith(".py") and not self._should_skip_quality_check(mod.file_path)
         ]
 
         if not py_files:
@@ -775,8 +661,11 @@ class VishwaAgent:
             if not os.path.exists(file_path):
                 continue
             result = self._check_code_quality(file_path)
-            if result and not result.success and result.error:
-                all_issues.append(f"{file_path}:\n{result.error}")
+            # Only enforce actual errors, not warnings/style issues
+            if result and not result.success and result.metadata:
+                error_count = result.metadata.get("errors", 0)
+                if error_count > 0 and result.error:
+                    all_issues.append(f"{file_path}:\n{result.error}")
 
         if all_issues:
             return "\n\n".join(all_issues), None  # All linter issues are critical

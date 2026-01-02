@@ -9,6 +9,7 @@ Provides:
 """
 
 import os
+import re
 import subprocess
 import tempfile
 import atexit
@@ -588,6 +589,66 @@ def print_warning(message: str) -> None:
 def print_error(message: str) -> None:
     """Print error message"""
     console.print(f"\n[bold red][error] {message}[/bold red]\n")
+
+
+def print_quality_check_start(file_path: str) -> None:
+    """Print message when starting a quality check on a file."""
+    filename = Path(file_path).name
+    console.print(f"[dim]Reviewing {filename}...[/dim]")
+
+
+def print_quality_passed(file_path: str) -> None:
+    """Print message when quality check passes."""
+    console.print(f"  [green]✓[/green] [dim]Looks good[/dim]")
+
+
+def print_quality_issues(
+    file_path: str,
+    issues_count: int,
+    errors: int,
+    warnings: int,
+    issues: list[str] | None = None
+) -> None:
+    """Print message showing quality issues found."""
+    parts = []
+    if errors > 0:
+        parts.append(f"[red]{errors} error(s)[/red]")
+    if warnings > 0:
+        parts.append(f"[yellow]{warnings} warning(s)[/yellow]")
+    issues_str = ", ".join(parts) if parts else f"{issues_count} issue(s)"
+    console.print(f"  [yellow]![/yellow] {issues_str}")
+
+    # Show individual issues if provided
+    if issues:
+        for issue in issues[:5]:  # Limit to first 5 issues
+            # Parse issue format: "file:line:col [code] message"
+            # Handle Windows paths with drive letters (C:\...)
+            match = re.search(r':(\d+):(\d+)\s+\[([^\]]+)\]\s+(.+)', issue)
+            if match:
+                line_num = match.group(1)
+                message = match.group(4)
+                console.print(f"    [dim]Line {line_num}:[/dim] {message}")
+            else:
+                # Fallback: just show the issue as-is
+                console.print(f"    [dim]{issue}[/dim]")
+        if len(issues) > 5:
+            console.print(f"    [dim]... and {len(issues) - 5} more[/dim]")
+
+
+def print_pre_completion_review(file_count: int) -> None:
+    """Print message when starting pre-completion review."""
+    files_text = "file" if file_count == 1 else "files"
+    console.print(f"[dim]Reviewing {file_count} {files_text}...[/dim]")
+
+
+def print_pre_completion_issues(attempt: int, max_attempts: int) -> None:
+    """Print message when pre-completion review finds issues."""
+    console.print(f"  [dim]Fixing ({attempt}/{max_attempts})...[/dim]")
+
+
+def print_pre_completion_passed() -> None:
+    """Print message when pre-completion review passes."""
+    console.print(f"  [green]✓[/green] [dim]Looks good[/dim]")
 
 
 def show_diff(filepath: str, old: str, new: str) -> None:
