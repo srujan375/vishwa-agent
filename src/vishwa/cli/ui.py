@@ -1144,16 +1144,3 @@ def print_quality_passed(file_path: str) -> None:
         file_path: Path to the file that passed
     """
     console.print(f"[green]✓ Quality check passed: {file_path}[/green]")
-
-
-def print_quality_issues(file_path: str, issues_count: int, errors: int, warnings: int) -> None:
-    """
-    Print code quality issues found in a file.
-
-    Args:
-        file_path: Path to the file with issues
-        issues_count: Total number of issues
-        errors: Number of errors
-        warnings: Number of warnings
-    """
-    console.print(f"[yellow]⚠ Quality issues in {file_path}: {issues_count} issues ({errors} errors, {warnings} warnings)[/yellow]")

@@ -6,6 +6,7 @@ Main entry point: `vishwa "your task"` or `vishwa` for interactive mode
 
 import os
 import sys
+from typing import Optional
 
 import click
 from dotenv import load_dotenv
@@ -28,8 +29,8 @@ from vishwa.utils.logger import logger
 )
 @click.option(
     "--max-iter",
-    default=15,
-    help="Maximum iterations for agent loop",
+    default=None,
+    help="Maximum iterations for agent loop (default: unlimited)",
     type=int,
 )
 @click.option(
@@ -75,6 +76,16 @@ from vishwa.utils.logger import logger
     is_flag=True,
     help="Skip code review before completion",
 )
+@click.option(
+    "--continue", "continue_session",
+    is_flag=True,
+    help="Continue the most recent session",
+)
+@click.option(
+    "--resume",
+    default=None,
+    help="Resume a session by name or ID",
+)
 @click.pass_context
 def main(
     ctx,
@@ -89,6 +100,8 @@ def main(
     no_log: bool,
     loop_threshold: int,
     skip_review: bool,
+    continue_session: bool,
+    resume: str,
 ):
     """
     Vishwa - Terminal-based Agentic Coding Assistant
@@ -98,10 +111,14 @@ def main(
         vishwa "add docstring to main function"          # One-shot mode
         vishwa "fix the bug in auth.py" --model claude
         vishwa "run tests and fix failures" --max-iter 20
+        vishwa --continue                                # Resume last session
+        vishwa --resume my-feature                       # Resume named session
 
     Examples:
         vishwa "search for TODO comments" --model local
         vishwa "refactor the database code" --model gpt-4o
+        vishwa --continue                                # Continue where you left off
+        vishwa --resume auth-refactor                    # Resume by session name
     """
     # Load environment variables
     load_dotenv()
@@ -139,6 +156,8 @@ def main(
                 verbose=verbose,
                 loop_threshold=loop_threshold,
                 skip_review=effective_skip_review,
+                continue_session=continue_session,
+                resume_session=resume,
             )
             sys.exit(0)
         return
@@ -199,11 +218,13 @@ def main(
 
 def _run_interactive(
     model: str,
-    max_iter: int,
+    max_iter: Optional[int],
     auto_approve: bool,
     verbose: bool,
     loop_threshold: int = 15,
     skip_review: bool = False,
+    continue_session: bool = False,
+    resume_session: Optional[str] = None,
 ):
     """
     Run Vishwa in interactive REPL mode.
@@ -215,9 +236,12 @@ def _run_interactive(
         verbose: Verbose output
         loop_threshold: Loop detection threshold
         skip_review: Skip code review before completion
+        continue_session: Continue most recent session
+        resume_session: Resume session by name or ID
     """
     from vishwa.cli.interactive import InteractiveSession
     from vishwa.config import Config
+    from vishwa.session import SessionManager
 
     # Create console first, before try block
     console = Console()
@@ -250,6 +274,20 @@ def _run_interactive(
 
         # Start interactive session
         session = InteractiveSession(agent=agent, config=config, console=console)
+
+        # Handle --continue flag
+        if continue_session:
+            session_manager = SessionManager()
+            recent = session_manager.get_most_recent_session()
+            if recent:
+                session._cmd_resume([recent.id])
+            else:
+                console.print("[dim]No previous session found[/dim]")
+
+        # Handle --resume flag
+        elif resume_session:
+            session._cmd_resume([resume_session])
+
         session.start()
 
     except KeyboardInterrupt:
