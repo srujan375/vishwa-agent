@@ -573,6 +573,35 @@ class VishwaAgent:
 
             return result
 
+    def _should_skip_quality_check(self, file_path: str) -> bool:
+        """
+        Determine if a file should be skipped for quality checks.
+
+        Skips temporary files, test scripts, and other files where
+        quality checks add unnecessary overhead.
+
+        Args:
+            file_path: Path to the file to check
+
+        Returns:
+            True if the file should be skipped, False otherwise
+        """
+        # Skip test files
+        if "/test_" in file_path or "test_" in file_path.split("/")[-1]:
+            return True
+        if "/tests/" in file_path:
+            return True
+
+        # Skip temporary/scratch files
+        if "/tmp/" in file_path or "/temp/" in file_path:
+            return True
+
+        # Skip configuration and setup files
+        if file_path.endswith(("conftest.py", "setup.py", "__init__.py")):
+            return True
+
+        return False
+
     def _check_code_quality(
         self,
         file_path: str,

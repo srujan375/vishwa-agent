@@ -31,6 +31,7 @@ from vishwa.cli.file_completer import FileCompleter
 from vishwa.cli.command_completer import CommandCompleter
 from vishwa.cli.merged_completer import MergedCompleter
 from vishwa.config import Config
+from vishwa.session import SessionManager, Session, CheckpointManager
 
 
 # Color scheme
@@ -96,6 +97,17 @@ class InteractiveSession:
         self.message_count = 0
         self.start_time = datetime.now()
 
+        # Session persistence
+        self.session_manager = SessionManager()
+        self.session_id = self.session_manager.generate_session_id()
+        self.session_name: Optional[str] = None
+
+        # Checkpoint manager for rewind
+        self.checkpoint_manager = CheckpointManager(self.session_id)
+
+        # Tool results tracking
+        self.tool_results: List[Dict[str, Any]] = []
+
         # Command registry
         self.commands = self._register_commands()
 
@@ -115,6 +127,12 @@ class InteractiveSession:
             'models': 'List available models',
             'ollama': 'Manage Ollama models',
             'review': 'Toggle code review on/off',
+            'iterations': 'Set max iterations limit',
+            'dangerous': 'Toggle dangerous mode (skip approvals)',
+            'sessions': 'List saved sessions',
+            'resume': 'Resume a previous session',
+            'rename': 'Name the current session',
+            'rewind': 'Rewind to a previous checkpoint',
         }
         command_completer = CommandCompleter(command_descriptions)
 
@@ -212,6 +230,8 @@ class InteractiveSession:
         self.console.print(
             f"[dim]Session ended | {self.message_count} messages | {minutes}m {seconds}s[/dim]"
         )
+        if self.message_count > 0:
+            self.console.print(f"[dim]Session saved. Resume with: /resume 1[/dim]")
         self.console.print()
 
     def _get_input(self) -> str:
@@ -368,6 +388,12 @@ class InteractiveSession:
             'models': self._cmd_models,
             'ollama': self._cmd_ollama,
             'review': self._cmd_review,
+            'iterations': self._cmd_iterations,
+            'dangerous': self._cmd_dangerous,
+            'sessions': self._cmd_sessions,
+            'resume': self._cmd_resume,
+            'rename': self._cmd_rename,
+            'rewind': self._cmd_rewind,
         }
 
     # Command handlers
@@ -390,6 +416,12 @@ class InteractiveSession:
         table.add_row("/models", "List available models")
         table.add_row("/ollama [list|pull <model>]", "Manage Ollama models")
         table.add_row("/review", "Toggle code review on/off")
+        table.add_row("/iterations [n]", "Set max iterations (no arg = unlimited)")
+        table.add_row("/dangerous", "Toggle dangerous mode (skip all approvals)")
+        table.add_row("/sessions", "List saved sessions")
+        table.add_row("/resume [n]", "Resume session by number, name, or ID")
+        table.add_row("/rename <name>", "Name the current session")
+        table.add_row("/rewind [n]", "Rewind to checkpoint (n=1 most recent)")
 
         self.console.print(table)
         self.console.print()
@@ -404,6 +436,8 @@ class InteractiveSession:
 
     def _exit(self):
         """Internal exit handler."""
+        # Auto-save session before exiting
+        self._save_current_session()
         self.running = False
 
     def _cmd_clear(self, args: List[str]):
@@ -613,4 +647,324 @@ class InteractiveSession:
             self.console.print("[green]✓ Code review enabled[/green]")
             self.console.print("[dim]Code will be reviewed for critical and medium issues[/dim]")
 
+        self.console.print()
+
+    def _cmd_iterations(self, args: List[str]):
+        """Set maximum iterations limit."""
+        self.console.print()
+
+        if not args:
+            # No argument - set to unlimited
+            self.agent.max_iterations = None
+            self.console.print("[green]✓ Iterations set to unlimited[/green]")
+            self.console.print("[dim]Agent will run until task completion[/dim]")
+        else:
+            try:
+                limit = int(args[0])
+                if limit <= 0:
+                    self.console.print("[red]✗ Iterations must be a positive number[/red]")
+                    self.console.print()
+                    return
+
+                self.agent.max_iterations = limit
+                self.console.print(f"[green]✓ Max iterations set to {limit}[/green]")
+            except ValueError:
+                self.console.print(f"[red]✗ Invalid number: {args[0]}[/red]")
+                self.console.print("[dim]Usage: /iterations [n] (no arg = unlimited)[/dim]")
+
+        # Show current setting
+        current = self.agent.max_iterations
+        if current:
+            self.console.print(f"[dim]Current limit: {current} iterations[/dim]")
+        else:
+            self.console.print("[dim]Current limit: unlimited[/dim]")
+
+        self.console.print()
+
+    def _cmd_dangerous(self, args: List[str]):
+        """Toggle dangerous mode (skip all approval prompts)."""
+        from vishwa.tools import ToolRegistry
+
+        self.console.print()
+
+        # Toggle auto_approve
+        current_state = getattr(self.agent, 'auto_approve', False)
+        new_state = not current_state
+        self.agent.auto_approve = new_state
+
+        # Reload tools with new auto_approve setting
+        self.agent.tools = ToolRegistry.load_default(auto_approve=new_state)
+
+        if new_state:
+            self.console.print("[red bold]⚠ DANGEROUS MODE ENABLED[/red bold]")
+            self.console.print("[yellow]All file edits and commands will run without approval[/yellow]")
+            self.console.print("[dim]Use /dangerous again to disable[/dim]")
+        else:
+            self.console.print("[green]✓ Dangerous mode disabled[/green]")
+            self.console.print("[dim]File edits and risky commands will require approval[/dim]")
+
+        self.console.print()
+
+    def _cmd_sessions(self, args: List[str]):
+        """List saved sessions."""
+        self.console.print()
+
+        sessions = self.session_manager.list_sessions(limit=10)
+
+        if not sessions:
+            self.console.print("[dim]No saved sessions found[/dim]")
+            self.console.print("[dim]Sessions are auto-saved when you exit[/dim]")
+            self.console.print()
+            return
+
+        # Create table
+        table = Table(show_header=True, header_style="cyan", border_style="cyan")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Name", style="cyan")
+        table.add_column("Date", style="dim")
+        table.add_column("Branch", style="dim")
+        table.add_column("Msgs", justify="right")
+        table.add_column("Summary")
+
+        for idx, session in enumerate(sessions, 1):
+            # Format date
+            try:
+                dt = datetime.fromisoformat(session.updated_at)
+                date_str = dt.strftime("%m/%d %H:%M")
+            except:
+                date_str = session.updated_at[:16]
+
+            # Session name or truncated summary
+            name = session.name if session.name else "-"
+
+            # Truncate summary
+            summary = session.summary[:30] + "..." if len(session.summary) > 30 else session.summary
+
+            # Git branch
+            branch = session.git_branch or "-"
+
+            table.add_row(
+                str(idx),
+                name,
+                date_str,
+                branch,
+                str(session.message_count),
+                summary,
+            )
+
+        self.console.print(table)
+        self.console.print()
+        self.console.print("[dim]Resume with: /resume <number> or /resume <name>[/dim]")
+        self.console.print()
+
+    def _cmd_resume(self, args: List[str]):
+        """Resume a previous session."""
+        self.console.print()
+
+        if not args:
+            self.console.print("[red]✗ Session number or ID required[/red]")
+            self.console.print("[dim]Usage: /resume <number> or /resume <session-id>[/dim]")
+            self.console.print("[dim]Use /sessions to see available sessions[/dim]")
+            self.console.print()
+            return
+
+        session_ref = args[0]
+
+        # Try to load by index first
+        session = None
+        try:
+            index = int(session_ref)
+            session = self.session_manager.get_session_by_index(index)
+        except ValueError:
+            # Not a number, try as session ID
+            session = self.session_manager.load_session(session_ref)
+
+        if not session:
+            self.console.print(f"[red]✗ Session not found: {session_ref}[/red]")
+            self.console.print("[dim]Use /sessions to see available sessions[/dim]")
+            self.console.print()
+            return
+
+        # Restore session state
+        self.session_id = session.id
+        self.session_name = session.name
+        self.message_count = session.message_count
+        self.tool_results = session.tool_results
+
+        # Restore checkpoint manager for this session
+        self.checkpoint_manager = CheckpointManager(session.id)
+
+        # Clear current context and restore from session
+        self.agent.context.clear()
+
+        # Restore messages
+        for msg_data in session.messages:
+            self.agent.context.add_message(
+                role=msg_data.get("role", "user"),
+                content=msg_data.get("content", ""),
+                tool_call_id=msg_data.get("tool_call_id"),
+                tool_calls=msg_data.get("tool_calls"),
+            )
+
+        # Restore files in context
+        for path, content in session.files_in_context.items():
+            self.agent.context.add_file_to_context(path, content)
+
+        # Show resume info
+        name_info = f" ({session.name})" if session.name else ""
+        branch_info = f" on {session.git_branch}" if session.git_branch else ""
+        self.console.print(f"[green]✓ Resumed session{name_info}{branch_info}[/green]")
+        self.console.print(f"[dim]Restored {len(session.messages)} messages, {len(session.files_in_context)} files, {len(session.checkpoints)} checkpoints[/dim]")
+        self.console.print()
+
+    def _save_current_session(self) -> None:
+        """Save the current session to disk."""
+        # Only save if we have messages
+        if self.message_count == 0:
+            return
+
+        # Get messages from agent context
+        messages = self.agent.context.get_messages()
+
+        # Create session object
+        session = Session(
+            id=self.session_id,
+            name=self.session_name,
+            created_at=self.start_time.isoformat(),
+            updated_at=datetime.now().isoformat(),
+            working_directory=os.getcwd(),
+            git_branch=None,  # Will be set by save_session
+            model=getattr(self.agent.llm, 'model_name', 'unknown'),
+            message_count=self.message_count,
+            summary=self.session_manager.create_summary(messages),
+            messages=messages,
+            tool_results=self.tool_results,
+            files_in_context=dict(self.agent.context.files_in_context),
+            modifications=[
+                {
+                    "file_path": mod.file_path,
+                    "tool": mod.tool,
+                    "timestamp": mod.timestamp,
+                }
+                for mod in self.agent.context.modifications
+            ],
+            checkpoints=[
+                {
+                    "id": cp.id,
+                    "timestamp": cp.timestamp,
+                    "message_index": cp.message_index,
+                    "description": cp.description,
+                }
+                for cp in self.checkpoint_manager.get_checkpoints()
+            ],
+        )
+
+        # Save to disk
+        self.session_manager.save_session(session)
+
+        # Cleanup old sessions (keep last 50)
+        self.session_manager.cleanup_old_sessions(keep_count=50)
+
+    def _cmd_rename(self, args: List[str]):
+        """Rename the current session."""
+        self.console.print()
+
+        if not args:
+            if self.session_name:
+                self.console.print(f"[dim]Current session name: {self.session_name}[/dim]")
+            else:
+                self.console.print("[dim]Session has no name[/dim]")
+            self.console.print("[dim]Usage: /rename <name>[/dim]")
+            self.console.print()
+            return
+
+        new_name = " ".join(args)
+        self.session_name = new_name
+
+        # Save immediately to persist the name
+        self._save_current_session()
+
+        self.console.print(f"[green]✓ Session renamed to: {new_name}[/green]")
+        self.console.print(f"[dim]Resume later with: /resume {new_name}[/dim]")
+        self.console.print()
+
+    def _cmd_rewind(self, args: List[str]):
+        """Rewind to a previous checkpoint."""
+        self.console.print()
+
+        checkpoints = self.checkpoint_manager.get_checkpoints()
+
+        if not checkpoints:
+            self.console.print("[dim]No checkpoints available[/dim]")
+            self.console.print("[dim]Checkpoints are created before file edits[/dim]")
+            self.console.print()
+            return
+
+        # If no args, show available checkpoints
+        if not args:
+            table = Table(show_header=True, header_style="cyan", border_style="cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Time", style="cyan")
+            table.add_column("Description")
+            table.add_column("Files", justify="right")
+
+            # Show in reverse order (most recent first)
+            for idx, cp in enumerate(reversed(checkpoints), 1):
+                try:
+                    dt = datetime.fromisoformat(cp.timestamp)
+                    time_str = dt.strftime("%H:%M:%S")
+                except:
+                    time_str = cp.timestamp[:8]
+
+                desc = cp.description[:40] + "..." if len(cp.description) > 40 else cp.description
+                table.add_row(str(idx), time_str, desc, str(len(cp.file_states)))
+
+            self.console.print(table)
+            self.console.print()
+            self.console.print("[dim]Rewind with: /rewind <number>[/dim]")
+            self.console.print("[dim]Options: /rewind 1 code    - rewind code only[/dim]")
+            self.console.print("[dim]         /rewind 1 both    - rewind code and conversation[/dim]")
+            self.console.print()
+            return
+
+        # Parse arguments
+        try:
+            index = int(args[0])
+        except ValueError:
+            self.console.print(f"[red]✗ Invalid checkpoint number: {args[0]}[/red]")
+            self.console.print()
+            return
+
+        # Check rewind mode
+        rewind_code = True
+        rewind_conversation = False
+
+        if len(args) > 1:
+            mode = args[1].lower()
+            if mode == "code":
+                rewind_code = True
+                rewind_conversation = False
+            elif mode == "both":
+                rewind_code = True
+                rewind_conversation = True
+            elif mode == "conversation":
+                rewind_code = False
+                rewind_conversation = True
+
+        # Perform rewind
+        checkpoint = self.checkpoint_manager.rewind_to_index(index, rewind_code=rewind_code)
+
+        if not checkpoint:
+            self.console.print(f"[red]✗ Checkpoint {index} not found[/red]")
+            self.console.print()
+            return
+
+        # Rewind conversation if requested
+        if rewind_conversation and checkpoint.message_index < len(self.agent.context.messages):
+            self.agent.context.messages = self.agent.context.messages[:checkpoint.message_index]
+
+        files_restored = len(checkpoint.file_states) if rewind_code else 0
+        self.console.print(f"[green]✓ Rewound to checkpoint {index}[/green]")
+        if rewind_code:
+            self.console.print(f"[dim]Restored {files_restored} file(s)[/dim]")
         self.console.print()
