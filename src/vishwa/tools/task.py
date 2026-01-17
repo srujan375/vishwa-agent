@@ -320,11 +320,21 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
             #
             # ═══════════════════════════════════════════════════════════════
 
+            from vishwa.llm.config import LLMConfig
+            from vishwa.llm.factory import LLMFactory
+
+            sub_agent_model = LLMConfig.get_subagent_model(subagent_type)
+
+            if sub_agent_model:
+                sub_llm = LLMFactory.create(sub_agent_model)
+            else:
+                sub_llm = self.llm
+
             # Launch sub-agent
             # Key: auto_approve=True for read-only tools (no user prompts)
             # TODO: Change self.llm to sub_llm after implementing the above
             sub_agent = VishwaAgent(
-                llm=self.llm,  # <-- TODO: Replace with sub_llm
+                llm=sub_llm,  # <-- TODO: Replace with sub_llm
                 tools=sub_tool_registry,
                 max_iterations=max_iterations,
                 auto_approve=True,  # Auto-approve read-only tools

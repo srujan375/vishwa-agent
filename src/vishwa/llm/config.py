@@ -212,18 +212,23 @@ class LLMConfig:
     #   3. Look up subagent_type in config["subagent_models"]
     #   4. If found, return that model name
     #   5. If not found, return None (so the caller can fall back to default)
-    #
-    # Method signature:
-    #   @classmethod
-    #   def get_subagent_model(cls, subagent_type: str) -> Optional[str]:
-    #
-    # Example implementation structure:
-    #   config = cls._load_config()
-    #   subagent_models = config.get("subagent_models", {})
-    #   return subagent_models.get(subagent_type)
-    #
-    # ═══════════════════════════════════════════════════════════════════════════
 
+    @classmethod
+    def get_subagent_model(cls, subagent_type: str) -> Optional[str]:
+        """Get the configured model for a specific subagent type.
+
+        Args:
+            subagent_type: The subagent type (e.g., "Explore", "Plan", "CodeReview")
+
+        Returns:
+            Model name if configured, None otherwise (caller should fall back to default)
+        """
+        config = cls._load_config()
+        subagent_models = config.get("subagent_models", {})
+        model = subagent_models.get(subagent_type)
+        # Return None for empty strings so caller falls back to default
+        return model if model else None
+    
     @classmethod
     def get_fallback_chain(cls, chain_name: str = "default") -> List[str]:
         """
