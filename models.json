@@ -138,6 +138,17 @@
       }
     }
   },
+  "_TODO_STEP_1": "Add a 'subagent_models' section here that maps each subagent type to a model name",
+  "_TODO_EXAMPLE": {
+    "Explore": "claude-haiku-4-5",
+    "Plan": "claude-sonnet-4-5",
+    "Test": "claude-haiku-4-5",
+    "Refactor": "claude-sonnet-4-5",
+    "Documentation": "claude-haiku-4-5",
+    "CodeReview": "claude-sonnet-4-5"
+  },
+  "_TODO_HINT": "Delete these _TODO keys and create a real 'subagent_models' key with your chosen models",
+
   "aliases": {
     "claude": "claude-sonnet-4-5",
     "sonnet": "claude-sonnet-4-5",
