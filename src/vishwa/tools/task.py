@@ -293,10 +293,48 @@ Sub-agents return structured summaries. Details are stored and retrievable via f
                 if tool:
                     sub_tool_registry.register(tool)
 
+            # ═══════════════════════════════════════════════════════════════
+            # TODO STEP 3: Create a different LLM for sub-agents if configured
+            # ═══════════════════════════════════════════════════════════════
+            #
+            # Currently: sub_agent uses self.llm (same as main agent)
+            # Goal: Use a cheaper/faster model for simple subagent types
+            #
+            # Steps to implement:
+            #   1. Import LLMConfig: from vishwa.llm.config import LLMConfig
+            #   2. Import LLMFactory: from vishwa.llm.factory import LLMFactory
+            #   3. Check if a specific model is configured for this subagent_type:
+            #      subagent_model = LLMConfig.get_subagent_model(subagent_type)
+            #   4. If subagent_model exists, create a new LLM:
+            #      sub_llm = LLMFactory.create(subagent_model)
+            #   5. If not, fall back to self.llm:
+            #      sub_llm = self.llm
+            #   6. Pass sub_llm to VishwaAgent below instead of self.llm
+            #
+            # Pseudocode:
+            #   subagent_model = LLMConfig.get_subagent_model(subagent_type)
+            #   if subagent_model:
+            #       sub_llm = LLMFactory.create(subagent_model)
+            #   else:
+            #       sub_llm = self.llm
+            #
+            # ═══════════════════════════════════════════════════════════════
+
+            from vishwa.llm.config import LLMConfig
+            from vishwa.llm.factory import LLMFactory
+
+            sub_agent_model = LLMConfig.get_subagent_model(subagent_type)
+
+            if sub_agent_model:
+                sub_llm = LLMFactory.create(sub_agent_model)
+            else:
+                sub_llm = self.llm
+
             # Launch sub-agent
             # Key: auto_approve=True for read-only tools (no user prompts)
+            # TODO: Change self.llm to sub_llm after implementing the above
             sub_agent = VishwaAgent(
-                llm=self.llm,
+                llm=sub_llm,  # <-- TODO: Replace with sub_llm
                 tools=sub_tool_registry,
                 max_iterations=max_iterations,
                 auto_approve=True,  # Auto-approve read-only tools

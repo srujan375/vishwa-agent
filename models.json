@@ -138,6 +138,14 @@
       }
     }
   },
+  "subagent_models":{
+    "Explore": "openrouter:qwen3-coder-flash",
+    "Plan": "openrouter:moonshotai/kimi-dev-72b",
+    "Test": "openrouter:moonshotai/kimi-dev-72b",
+    "Refactor": "openrouter:deepseek/deepseek-v3.2",
+    "Documentation": "openrouter:moonshotai/kimi-dev-72b",
+    "CodeReview": "openrouter:deepseek/deepseek-v3.2"
+  },
   "aliases": {
     "claude": "claude-sonnet-4-5",
     "sonnet": "claude-sonnet-4-5",
