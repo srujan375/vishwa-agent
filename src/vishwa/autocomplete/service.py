@@ -9,6 +9,8 @@ import json
 import logging
 import tempfile
 import os
+import time
+import uuid
 from typing import Optional, Dict, Any
 from pathlib import Path
 
@@ -19,6 +21,11 @@ from vishwa.autocomplete.protocol import (
     AutocompleteSuggestion,
     JSONRPCMessage
 )
+from vishwa.autocomplete.rl.policy import ThompsonSamplingPolicy
+from vishwa.autocomplete.rl.features import extract_bucket_key
+from vishwa.autocomplete.rl.reward import compute_reward
+from vishwa.autocomplete.rl.storage import PolicyStorage
+from vishwa.autocomplete.rl.strategies import get_strategy
 
 
 # Setup logging to file (not stdout, which is used for protocol)
@@ -47,7 +54,16 @@ class AutocompleteService:
         self.suggestion_engine = SuggestionEngine(model=default_model)
         self.cache = SuggestionCache(max_size=100, ttl=300)
         self.default_model = default_model
+
+        # RL components
+        self.rl_policy = ThompsonSamplingPolicy()
+        self.rl_storage = PolicyStorage()
+        self.rl_storage.load(self.rl_policy)
+        # Track pending suggestions: {suggestion_id: {strategy, bucket, timestamp}}
+        self.pending_suggestions: Dict[str, Dict[str, Any]] = {}
+
         logger.info(f"Autocomplete service initialized with model: {default_model}")
+        logger.info(f"RL policy loaded: {self.rl_policy.total_interactions} prior interactions")
 
     def handle_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -74,6 +90,10 @@ class AutocompleteService:
                 result = self._handle_clear_cache()
             elif method == 'getStats':
                 result = self._handle_get_stats()
+            elif method == 'sendFeedback':
+                result = self._handle_send_feedback(params)
+            elif method == 'getRLStats':
+                result = self._handle_get_rl_stats()
             elif method == 'ping':
                 result = {'status': 'ok'}
             else:
@@ -97,11 +117,14 @@ class AutocompleteService:
         """
         Handle getSuggestion request.
 
+        Uses RL policy to select context-building strategy, tracks pending
+        suggestions for feedback.
+
         Args:
             params: Request parameters
 
         Returns:
-            Suggestion result
+            Suggestion result including suggestion_id, strategy, and bucket
         """
         file_path = params.get('file_path', '')
         content = params.get('content', '')
@@ -111,15 +134,15 @@ class AutocompleteService:
 
         logger.debug(f"Getting suggestion for {file_path} at {cursor_line}:{cursor_char}")
 
-        # Build context for cache key
+        # Build context for cache key and feature extraction
         lines = content.split('\n')
         start_line = max(0, cursor_line - 5)
         end_line = min(len(lines), cursor_line + 2)
-        context = '\n'.join(lines[start_line:end_line])
+        cache_context = '\n'.join(lines[start_line:end_line])
 
         # Check cache first
         cached_suggestion = self.cache.get(
-            file_path, cursor_line, cursor_char, context, content
+            file_path, cursor_line, cursor_char, cache_context, content
         )
 
         if cached_suggestion:
@@ -127,33 +150,75 @@ class AutocompleteService:
             return {
                 'suggestion': cached_suggestion,
                 'type': 'insertion',
-                'cached': True
+                'cached': True,
+                'suggestion_id': '',
+                'strategy': '',
+                'bucket': '',
             }
 
-        # Generate new suggestion
-        suggestion = self.suggestion_engine.generate_suggestion(
+        # Build full context for feature extraction
+        autocomplete_context = self.suggestion_engine.context_builder.build_context(
             file_path, content, cursor_line, cursor_char
         )
 
+        # Extract features and select strategy via RL policy
+        bucket = extract_bucket_key(autocomplete_context)
+        strategy_name = self.rl_policy.select_strategy(bucket)
+        strategy = get_strategy(strategy_name)
+
+        logger.debug(f"RL selected strategy={strategy_name} for bucket={bucket}")
+
+        # Generate suggestion using selected strategy
+        request_time = time.monotonic()
+        suggestion = self.suggestion_engine.generate_suggestion_with_strategy(
+            file_path, content, cursor_line, cursor_char, strategy
+        )
+
+        suggestion_id = uuid.uuid4().hex[:12]
+
+        # Track pending suggestion for feedback
+        self.pending_suggestions[suggestion_id] = {
+            'strategy': strategy_name,
+            'bucket': bucket,
+            'timestamp': request_time,
+        }
+        # Clean up old pending suggestions (>5 minutes)
+        self._cleanup_pending_suggestions()
+
         if suggestion:
-            # Cache the suggestion
             self.cache.put(
-                file_path, cursor_line, cursor_char, context, content, suggestion.text
+                file_path, cursor_line, cursor_char, cache_context, content, suggestion.text
             )
 
             logger.debug(f"Generated suggestion: {suggestion.text[:50]}...")
             return {
                 'suggestion': suggestion.text,
                 'type': suggestion.suggestion_type,
-                'cached': False
+                'cached': False,
+                'suggestion_id': suggestion_id,
+                'strategy': strategy_name,
+                'bucket': bucket,
             }
         else:
             logger.debug("No suggestion generated")
             return {
                 'suggestion': '',
                 'type': 'none',
-                'cached': False
+                'cached': False,
+                'suggestion_id': suggestion_id,
+                'strategy': strategy_name,
+                'bucket': bucket,
             }
+
+    def _cleanup_pending_suggestions(self) -> None:
+        """Remove pending suggestions older than 5 minutes."""
+        cutoff = time.monotonic() - 300
+        expired = [
+            sid for sid, info in self.pending_suggestions.items()
+            if info['timestamp'] < cutoff
+        ]
+        for sid in expired:
+            del self.pending_suggestions[sid]
 
     def _handle_set_model(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -193,6 +258,39 @@ class AutocompleteService:
             'cache': cache_stats,
             'model': self.suggestion_engine.model
         }
+
+    def _handle_send_feedback(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle sendFeedback request from VS Code.
+
+        Updates the RL policy with acceptance/rejection feedback.
+        """
+        suggestion_id = params.get('suggestion_id', '')
+        accepted = params.get('accepted', False)
+        latency_ms = params.get('latency_ms', 0.0)
+
+        pending = self.pending_suggestions.pop(suggestion_id, None)
+        if not pending:
+            logger.warning(f"Feedback for unknown suggestion_id: {suggestion_id}")
+            return {'status': 'ok', 'matched': False}
+
+        strategy = pending['strategy']
+        bucket = pending['bucket']
+
+        reward = compute_reward(accepted, latency_ms)
+        self.rl_policy.update(bucket, strategy, reward)
+        self.rl_storage.save(self.rl_policy)
+        self.rl_storage.log_feedback(bucket, strategy, accepted, latency_ms)
+
+        logger.debug(
+            f"Feedback: bucket={bucket} strategy={strategy} "
+            f"accepted={accepted} latency={latency_ms:.0f}ms reward={reward:.2f}"
+        )
+        return {'status': 'ok', 'matched': True}
+
+    def _handle_get_rl_stats(self) -> Dict[str, Any]:
+        """Return RL policy statistics for debugging."""
+        return self.rl_policy.get_stats()
 
     def run(self):
         """

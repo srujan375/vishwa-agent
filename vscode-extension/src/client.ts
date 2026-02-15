@@ -273,6 +273,9 @@ interface SuggestionResult {
     suggestion: string;
     type: string;
     cached: boolean;
+    suggestion_id: string;
+    strategy: string;
+    bucket: string;
 }
 
 interface StatsResult {
@@ -449,5 +452,17 @@ export class VishwaClient {
     async getStats(): Promise<StatsResult> {
         const result = await this.sendRequest('getStats', {});
         return result as StatsResult;
+    }
+
+    async sendFeedback(suggestionId: string, accepted: boolean, latencyMs: number): Promise<void> {
+        await this.sendRequest('sendFeedback', {
+            suggestion_id: suggestionId,
+            accepted,
+            latency_ms: latencyMs
+        });
+    }
+
+    async getRLStats(): Promise<any> {
+        return await this.sendRequest('getRLStats', {});
     }
 }

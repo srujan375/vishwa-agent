@@ -369,6 +369,16 @@ class VishwaClient {
         const result = await this.sendRequest('getStats', {});
         return result;
     }
+    async sendFeedback(suggestionId, accepted, latencyMs) {
+        await this.sendRequest('sendFeedback', {
+            suggestion_id: suggestionId,
+            accepted,
+            latency_ms: latencyMs
+        });
+    }
+    async getRLStats() {
+        return await this.sendRequest('getRLStats', {});
+    }
 }
 exports.VishwaClient = VishwaClient;
 //# sourceMappingURL=client.js.map

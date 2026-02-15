@@ -4,10 +4,12 @@ Suggestion engine for generating autocomplete suggestions using LLMs.
 
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+import re
 
 from vishwa.llm.factory import LLMFactory
 from vishwa.llm.base import BaseLLM
 from vishwa.autocomplete.context_builder import ContextBuilder, AutocompleteContext
+from vishwa.autocomplete.rl.strategies import Strategy, STRATEGIES
 
 
 @dataclass
@@ -146,6 +148,65 @@ Response: "input('Enter name: ')"
             print(f"Error generating suggestion: {e}")
             return None
 
+    def generate_suggestion_with_strategy(
+        self,
+        file_path: str,
+        content: str,
+        cursor_line: int,
+        cursor_char: int,
+        strategy: Strategy,
+    ) -> Optional[AutocompleteSuggestion]:
+        """
+        Generate autocomplete suggestion using a specific context strategy.
+
+        Args:
+            file_path: Path to file being edited
+            content: Full file content
+            cursor_line: Line number (0-indexed)
+            cursor_char: Character position (0-indexed)
+            strategy: Strategy controlling prompt construction
+
+        Returns:
+            AutocompleteSuggestion or None if no suggestion
+        """
+        if not self.llm:
+            return None
+
+        context = self.context_builder.build_context(
+            file_path, content, cursor_line, cursor_char
+        )
+
+        if self._should_skip_suggestion(context):
+            return None
+
+        user_prompt = self._build_user_prompt(context, strategy=strategy)
+
+        try:
+            response = self.llm.chat(
+                messages=[
+                    {"role": "user", "content": user_prompt}
+                ],
+                system=self.SYSTEM_PROMPT,
+                temperature=0.2,
+                max_tokens=strategy.max_tokens,
+            )
+
+            suggestion_text = response.content.strip()
+            suggestion_text = self._post_process_suggestion(suggestion_text, context)
+
+            if not suggestion_text:
+                return None
+
+            return AutocompleteSuggestion(
+                text=suggestion_text,
+                suggestion_type='insertion',
+                confidence=1.0
+            )
+
+        except Exception as e:
+            print(f"Error generating suggestion: {e}")
+            return None
+
     def _should_skip_suggestion(self, context: AutocompleteContext) -> bool:
         """
         Determine if we should skip generating a suggestion.
@@ -194,44 +255,58 @@ Response: "input('Enter name: ')"
 
         return False
 
-    def _build_user_prompt(self, context: AutocompleteContext) -> str:
+    def _build_user_prompt(
+        self,
+        context: AutocompleteContext,
+        strategy: Optional[Strategy] = None,
+    ) -> str:
         """
         Build user prompt for the LLM.
 
         Args:
             context: Autocomplete context
+            strategy: Optional strategy to control prompt construction.
+                      If None, uses the "standard" strategy defaults.
 
         Returns:
             Formatted prompt string
         """
+        # Default to standard strategy parameters when no strategy provided
+        if strategy is None:
+            strategy = STRATEGIES["standard"]
+
         prompt_parts = []
 
         # Add language and file context
         prompt_parts.append(f"Complete the following {context.language} code:")
         prompt_parts.append("")
 
-        # Include imports for context (helps with available modules/functions)
-        if context.imports:
+        # Include imports for context if strategy allows
+        if strategy.include_imports and context.imports:
             prompt_parts.append("# Imports:")
-            for imp in context.imports[:10]:  # Limit to 10 imports
+            for imp in context.imports[:strategy.max_imports]:
                 prompt_parts.append(imp)
             prompt_parts.append("")
 
-        # Include referenced function definitions for context
-        if context.referenced_functions:
+        # Include referenced function definitions if strategy allows
+        if strategy.include_functions and context.referenced_functions:
             prompt_parts.append("# Available functions in this file:")
-            for func in context.referenced_functions[:5]:  # Limit to 5 functions
+            for func in context.referenced_functions[:strategy.max_functions]:
                 prompt_parts.append(f"# {func.signature}")
                 if func.docstring:
                     prompt_parts.append(f"#   \"\"\"{func.docstring}\"\"\"")
                 if func.body_preview:
-                    # Show first line of body as hint
                     first_line = func.body_preview.split('\n')[0]
                     prompt_parts.append(f"#   {first_line}...")
             prompt_parts.append("")
 
-        # Show context before cursor (last 15 lines)
-        lines_before = context.lines_before[-15:] if len(context.lines_before) > 15 else context.lines_before
+        # Determine lines_before based on strategy
+        if strategy.dynamic_scope:
+            lines_before = self._get_scope_lines(context, strategy.max_scope_lines)
+        else:
+            n = strategy.lines_before
+            lines_before = context.lines_before[-n:] if len(context.lines_before) > n else context.lines_before
+
         for line in lines_before:
             prompt_parts.append(line)
 
@@ -239,8 +314,9 @@ Response: "input('Enter name: ')"
         current_up_to_cursor = context.current_line[:context.cursor_position]
         prompt_parts.append(current_up_to_cursor + "<CURSOR>")
 
-        # Show a couple lines after for context
-        lines_after = context.lines_after[:2]
+        # Show lines after for context
+        n_after = strategy.lines_after
+        lines_after = context.lines_after[:n_after]
         if lines_after:
             prompt_parts.append("")
             prompt_parts.append("# Code after cursor (for context):")
@@ -251,6 +327,45 @@ Response: "input('Enter name: ')"
         prompt_parts.append("Complete the code at <CURSOR>. Provide ONLY the completion text, nothing else.")
 
         return '\n'.join(prompt_parts)
+
+    def _get_scope_lines(
+        self,
+        context: AutocompleteContext,
+        max_lines: int,
+    ) -> list:
+        """
+        Get lines from the start of the current function/class scope to the cursor.
+
+        For scope_aware strategy: includes from the def/class line to cursor,
+        capped at max_lines.
+        """
+        if not context.in_function or not context.function_name:
+            # Not in a function/class — fall back to last max_lines
+            return context.lines_before[-max_lines:] if len(context.lines_before) > max_lines else context.lines_before
+
+        # Search backwards for the function/class definition
+        func_name = context.function_name
+        scope_start_idx = None
+        for i in range(len(context.lines_before) - 1, -1, -1):
+            line = context.lines_before[i]
+            # Match def funcname( or class ClassName
+            if re.match(rf'\s*(?:def|class|function|async\s+function)\s+{re.escape(func_name)}\b', line):
+                scope_start_idx = i
+                break
+            # Also match arrow functions: const funcname =
+            if re.match(rf'\s*(?:const|let|var)\s+{re.escape(func_name)}\s*=', line):
+                scope_start_idx = i
+                break
+
+        if scope_start_idx is not None:
+            scope_lines = context.lines_before[scope_start_idx:]
+            # Cap at max_lines
+            if len(scope_lines) > max_lines:
+                scope_lines = scope_lines[-max_lines:]
+            return scope_lines
+
+        # Couldn't find scope start, fall back
+        return context.lines_before[-max_lines:] if len(context.lines_before) > max_lines else context.lines_before
 
     def _post_process_suggestion(
         self,

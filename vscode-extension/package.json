@@ -95,6 +95,10 @@
       {
         "command": "vishwa.autocomplete.showStats",
         "title": "Vishwa: Show Autocomplete Statistics"
+      },
+      {
+        "command": "vishwa.autocomplete.showRLStats",
+        "title": "Vishwa: Show RL Stats"
       }
     ]
   },

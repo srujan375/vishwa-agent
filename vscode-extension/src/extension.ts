@@ -25,6 +25,15 @@ export async function activate(context: vscode.ExtensionContext) {
         registerProvider(context);
     }
 
+    // Register text document change listener for RL feedback
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (provider) {
+                provider.handleTextDocumentChange(event);
+            }
+        })
+    );
+
     // Register commands
     context.subscriptions.push(
         vscode.commands.registerCommand('vishwa.autocomplete.toggle', () => {
@@ -74,6 +83,34 @@ Model: ${stats.model}
         })
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand('vishwa.autocomplete.showRLStats', async () => {
+            if (client) {
+                try {
+                    const stats = await client.getRLStats();
+                    const totalInteractions = stats.total_interactions || 0;
+                    const bucketCount = Object.keys(stats.buckets || {}).length;
+
+                    let message = `RL Stats: ${totalInteractions} interactions, ${bucketCount} buckets\n\n`;
+
+                    for (const [bucket, strategies] of Object.entries(stats.buckets || {})) {
+                        message += `${bucket}:\n`;
+                        for (const [strategy, data] of Object.entries(strategies as Record<string, any>)) {
+                            const d = data as any;
+                            message += `  ${strategy}: mean=${d.mean} obs=${d.observations}${d.disabled ? ' [DISABLED]' : ''}\n`;
+                        }
+                    }
+
+                    outputChannel.appendLine(message);
+                    outputChannel.show();
+                    vscode.window.showInformationMessage(`RL Stats: ${totalInteractions} interactions across ${bucketCount} buckets. See output channel for details.`);
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to get RL stats: ${error}`);
+                }
+            }
+        })
+    );
+
     // Watch for configuration changes
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (e) => {
@@ -100,7 +137,7 @@ Model: ${stats.model}
         })
     );
 
-    outputChannel.appendLine('Vishwa Autocomplete extension activated successfully');
+    outputChannel.appendLine('Vishwa Autocomplete extension activated successfully (v3 - background fetch)');
 }
 
 function registerProvider(context: vscode.ExtensionContext) {
