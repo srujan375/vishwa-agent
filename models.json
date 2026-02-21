@@ -127,13 +127,13 @@
           "name": "openrouter:deepseek/deepseek-r1",
           "description": "DeepSeek R1 via OpenRouter"
         },
-        "openrouter:z-ai/glm-4.7": {
-          "name": "openrouter:z-ai/glm-4.7",
-          "description": "GLM-4.7 via OpenRouter"
+        "openrouter:z-ai/glm-5": {
+          "name": "openrouter:z-ai/glm-5",
+          "description": "GLM-5 via OpenRouter"
         },
-        "openrouter:minimax/minimax-m2.1": {
-          "name": "openrouter:minimax/minimax-m2.1",
-          "description": "MiniMax M2.1 via OpenRouter"
+        "openrouter:minimax/minimax-m2.5": {
+          "name": "openrouter:minimax/minimax-m2.5",
+          "description": "MiniMax M2.5 via OpenRouter"
         }
       }
     }

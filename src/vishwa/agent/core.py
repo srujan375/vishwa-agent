@@ -97,6 +97,12 @@ class VishwaAgent:
         self.iteration = 0
         self.stop_reason = None
         self.task = ""
+
+        # TODO [REPO MAP - Step 1]: Initialize RepoMap here.
+        # Import RepoMap from vishwa.code_intelligence.repo_map
+        # Wrap in try/except ImportError so the agent still works if tree-sitter isn't installed.
+        # Store as self._repo_map (RepoMap instance or None)
+        # Also initialize self._repo_map_text: Optional[str] = None (cached map text)
         self._quality_fix_attempts = 0
         self._max_quality_fix_attempts = 3  # Max times to request quality fixes
         self._pending_quality_issues: list[tuple[str, str]] = []  # (file_path, issues)
@@ -350,6 +356,12 @@ class VishwaAgent:
         files = list(self.context.files_in_context.keys())
         mods = len(self.context.modifications)
 
+        # TODO [REPO MAP - Step 2]: Generate repo map text before building prompt.
+        # If self._repo_map_text is None, call self._generate_repo_map(files).
+        # _generate_repo_map should call self._repo_map.generate(context_files=files)
+        # wrapped in try/except to return "" on any failure.
+        # Pass repo_map=self._repo_map_text as a new kwarg below.
+
         return get_system_prompt(
             tools_description=self._format_tools_description(),
             working_directory=cwd,
@@ -494,6 +506,11 @@ class VishwaAgent:
                     file_path=arguments.get("path", ""),
                     tool=tool_name,
                 )
+
+            # TODO [REPO MAP - Step 3]: Invalidate repo map cache after file modifications.
+            # When str_replace, write_file, or multi_edit succeeds:
+            #   - Set self._repo_map_text = None (forces re-generation on next prompt)
+            #   - Call self._repo_map._cache.invalidate(file_path) so only that file re-parses
 
             # Post-edit quality check for Python files (if enabled)
             # Skip temp/test scripts to avoid unnecessary review overhead
