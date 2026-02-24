@@ -31,3 +31,17 @@ __all__ = [
     'get_dependency_graph',
     'analyze_codebase',
 ]
+
+# TODO [REPO MAP - Step 6]: Once you've created repo_map.py and treesitter_parser.py,
+# add these imports and exports:
+#
+# from vishwa.code_intelligence.repo_map import RepoMap
+# from vishwa.code_intelligence.treesitter_parser import (
+#     TreeSitterParser,
+#     SymbolDefinition,
+#     SymbolReference,
+#     FileParseResult,
+# )
+#
+# And add to __all__: 'RepoMap', 'TreeSitterParser', 'SymbolDefinition',
+#                      'SymbolReference', 'FileParseResult'
